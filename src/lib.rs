@@ -1,11 +1,16 @@
 #![no_main]
 #![no_std]
 
+use core::time::Duration;
+
 use cortex_m_semihosting::debug;
 
 use defmt_rtt as _; // global logger
 
-use stm32f4xx_hal as _; // memory layout
+use stm32f4xx_hal::{
+    self as _,
+    timer::fugit::{self, Duration as FugitDuration},
+}; // memory layout
 
 use panic_probe as _;
 
@@ -15,7 +20,17 @@ use panic_probe as _;
 fn panic() -> ! {
     cortex_m::asm::udf()
 }
-
+pub trait DurationExt {
+    fn to_core_duration(&self) -> Duration;
+}
+impl DurationExt for FugitDuration<u64, 1, 10_000> {
+    fn to_core_duration(&self) -> Duration {
+        let total_in_millis = self.to_millis();
+        let seconds = total_in_millis / 1000;
+        let nanos = ((total_in_millis % 1_000) * 1_000_000) as u32;
+        Duration::new(seconds, nanos)
+    }
+}
 /// Terminates the application and makes a semihosting-capable debug tool exit
 /// with status code 0.
 pub fn exit() -> ! {

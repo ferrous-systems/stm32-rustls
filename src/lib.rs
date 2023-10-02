@@ -7,15 +7,14 @@ use cortex_m_semihosting::debug;
 
 use defmt_rtt as _; // global logger
 
-use stm32f4xx_hal::{
-    self as _,
-    timer::fugit::{self, Duration as FugitDuration},
-}; // memory layout
+use stm32f4xx_hal::{self as _, timer::fugit::Duration as FugitDuration};
 
-use panic_probe as _;
+pub const DENOM: u32 = 1;
+pub const TEN_KHZ: u32 = 10_000;
 
-// same panicking *behavior* as `panic-probe` but doesn't print a panic message
-// this prevents the panic message being printed *twice* when `defmt::panic` is invoked
+use panic_probe as _; // memory layout
+                      // same panicking *behavior* as `panic-probe` but doesn't print a panic message
+                      // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
 #[defmt::panic_handler]
 fn panic() -> ! {
     cortex_m::asm::udf()
@@ -23,7 +22,7 @@ fn panic() -> ! {
 pub trait DurationExt {
     fn to_core_duration(&self) -> Duration;
 }
-impl DurationExt for FugitDuration<u64, 1, 10_000> {
+impl DurationExt for FugitDuration<u64, DENOM, TEN_KHZ> {
     fn to_core_duration(&self) -> Duration {
         let total_in_millis = self.to_millis();
         let seconds = total_in_millis / 1000;

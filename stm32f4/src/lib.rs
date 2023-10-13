@@ -4,7 +4,7 @@
 extern crate alloc;
 
 use core::mem::MaybeUninit;
-use core::prelude::v1::global_allocator;
+//use core::prelude::v1::global_allocator;
 use embedded_alloc::Heap;
 use spin;
 

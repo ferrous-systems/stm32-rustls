@@ -16,7 +16,7 @@ use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
 use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_alloc::Heap;
-
+use spin;
 use static_cell::make_static;
 use {defmt_rtt as _, panic_probe as _};
 

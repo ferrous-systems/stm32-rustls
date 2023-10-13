@@ -1,3 +1,4 @@
+//Server in tcplistener
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
@@ -12,7 +13,6 @@ use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
 use embassy_time::Duration;
-use embedded_io_async::Write;
 use static_cell::make_static;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -35,7 +35,6 @@ async fn main(spawner: Spawner) -> ! {
     let p = embassy_stm32::init(config);
 
     info!("Hello World!");
-
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];

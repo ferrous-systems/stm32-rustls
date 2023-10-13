@@ -3,7 +3,6 @@
 #![feature(type_alias_impl_trait)]
 extern crate alloc;
 use alloc::vec;
-use core::mem::MaybeUninit;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Address, Stack, StackResources};
@@ -13,26 +12,12 @@ use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
+use embassy_stm32f4_examples::init_heap;
 use embassy_time::Duration;
 use embassy_time::Timer;
-use embedded_alloc::Heap;
-use spin;
+
 use static_cell::make_static;
 use {defmt_rtt as _, panic_probe as _};
-
-const HEAP_SIZE: usize = 1024;
-#[global_allocator]
-static HEAP: Heap = Heap::empty();
-static START: spin::Once = spin::Once::new();
-
-pub fn init_heap() {
-    START.call_once(|| {
-        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
-        unsafe {
-            HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE);
-        }
-    });
-}
 
 bind_interrupts!(struct Irqs {
     ETH => eth::InterruptHandler;

@@ -1,7 +1,8 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
-
+extern crate alloc;
+use alloc::vec;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Address, Stack, StackResources};
@@ -13,8 +14,10 @@ use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
 use embassy_time::Duration;
 use embassy_time::Timer;
-
 use static_cell::make_static;
+use stm32f429 as _;
+use stm32f429::init_heap;
+
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -43,7 +46,7 @@ async fn main(spawner: Spawner) -> ! {
     let _ = rng.async_fill_bytes(&mut seed).await;
     let seed = u64::from_le_bytes(seed);
 
-    let mac_addr = [0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
+    let mac_addr = [6, 5, 4, 3, 2, 1];
 
     let device = Ethernet::new(
         make_static!(PacketQueue::<16, 16>::new()),
@@ -81,6 +84,10 @@ async fn main(spawner: Spawner) -> ! {
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
+    // send a hello message
+    init_heap();
+    let msg = vec![104, 101, 108, 108, 111];
+
     loop {
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));
@@ -92,13 +99,12 @@ async fn main(spawner: Spawner) -> ! {
             continue;
         }
         info!("Connected to {:?}", socket.remote_endpoint());
-        let msg = b"Hello world!\n";
         loop {
-            if let Err(e) = socket.write(msg).await {
+            if let Err(e) = socket.write(&msg).await {
                 warn!("write error: {:?}", e);
                 break;
             }
-            info!("txd: {}", core::str::from_utf8(msg).unwrap());
+            info!("txd: {}", core::str::from_utf8(&msg).unwrap());
             Timer::after(Duration::from_secs(10)).await;
         }
     }

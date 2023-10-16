@@ -3,21 +3,22 @@
 #![feature(type_alias_impl_trait)]
 extern crate alloc;
 use alloc::vec;
+
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Address, Stack, StackResources};
 use embassy_stm32::eth::generic_smi::GenericSMI;
-use embassy_stm32::eth::{Ethernet, PacketQueue};
+use embassy_stm32::eth::Ethernet;
+use embassy_stm32::eth::PacketQueue;
 use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
-use embassy_time::Duration;
-use embassy_time::Timer;
+use embassy_time::{driver, Duration, Instant, Timer};
 use static_cell::make_static;
 use stm32f429 as _;
 use stm32f429::init_heap;
-
+use stm32f429::UnixTime;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -37,9 +38,8 @@ async fn main(spawner: Spawner) -> ! {
     let mut config = Config::default();
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
-
-    info!("Hello World!");
-
+    let mut now = Instant::now();
+    let since_1970 = UnixTime::now();
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];
@@ -78,7 +78,7 @@ async fn main(spawner: Spawner) -> ! {
     // Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
 
-    info!("Network task initialized");
+    //info!("Network task initialized");
 
     // Then we can use it!
     let mut rx_buffer = [0; 4096];
@@ -89,6 +89,11 @@ async fn main(spawner: Spawner) -> ! {
     let msg = vec![104, 101, 108, 108, 111];
 
     loop {
+        info!("since_1970 {:?}", Debug2Format(&since_1970));
+        info!(
+            "NOW {:?}",
+            Debug2Format(&(now.elapsed() + since_1970.as_duration()))
+        );
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));
         let add = "192.168.50.67".parse::<Ipv4Address>().unwrap();

@@ -31,6 +31,10 @@ impl UnixTime {
         Self::since_unix_epoch(EPOCH_70)
     }
 
+    pub fn now_elapsed_since_1970(&self, monotonic_now: u64) -> u64 {
+        monotonic_now + self.as_secs()
+    }
+
     pub fn as_u64(&self) -> u64 {
         self.0
     }

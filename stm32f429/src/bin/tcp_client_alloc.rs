@@ -95,8 +95,8 @@ async fn main(spawner: Spawner) -> ! {
             Debug2Format(&now.elapsed().as_secs())
         );
         info!(
-            "NOW now.elapsed() + since_1970.as_duration() {:?}",
-            Debug2Format(&(now.elapsed().as_secs() + since_1970.as_secs()))
+            "NOW now_elapsed_since_1970 {:?}",
+            Debug2Format(&(since_1970.now_elapsed_since_1970(now.elapsed().as_secs())))
         );
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));

@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "embassy-stm32f4-examples"
+name = "stm32f429"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
@@ -67,6 +67,7 @@ embedded-storage = "0.3.0"
 micromath = "2.0.0"
 static_cell = { version = "1.1", features = ["nightly"] }
 chrono = { version = "^0.4", default-features = false }
-
+embedded-alloc = "0.5.0"
+spin = "0.9.8"
 [profile.release]
 debug = 2

@@ -43,7 +43,7 @@ async fn main(spawner: Spawner) -> ! {
     let _ = rng.async_fill_bytes(&mut seed).await;
     let seed = u64::from_le_bytes(seed);
 
-    let mac_addr = [0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
+    let mac_addr = [6, 5, 4, 3, 2, 1];
 
     let device = Ethernet::new(
         make_static!(PacketQueue::<16, 16>::new()),

@@ -4,8 +4,8 @@
 extern crate alloc;
 
 use core::mem::MaybeUninit;
-const EPOCH_70: u64 = 101010;
-use embassy_time::Duration;
+use embassy_time::{Duration, Instant};
+const EPOCH_70: u64 = 100;
 use embedded_alloc::Heap;
 use spin;
 const HEAP_SIZE: usize = 1024;

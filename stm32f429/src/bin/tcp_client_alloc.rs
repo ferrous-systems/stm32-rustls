@@ -14,11 +14,12 @@ use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
-use embassy_time::{driver, Duration, Instant, Timer};
+use embassy_time::{Duration, Instant, Timer};
+use rustls_pki_types::UnixTime;
 use static_cell::make_static;
 use stm32f429 as _;
 use stm32f429::init_heap;
-use stm32f429::UnixTime;
+use stm32f429::now_plus_elapsed_since_1970;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -26,6 +27,7 @@ bind_interrupts!(struct Irqs {
     HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
+const DURATION_SINCE_1970: u64 = 1697530048;
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
 #[embassy_executor::task]
@@ -38,8 +40,11 @@ async fn main(spawner: Spawner) -> ! {
     let mut config = Config::default();
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
-    let mut now = Instant::now();
-    let since_1970 = UnixTime::now();
+
+    let now = Instant::now();
+
+    // Must apparently be converted in coretime duration
+    let since_1970 = UnixTime::since_unix_epoch(Duration::from_secs(DURATION_SINCE_1970).into());
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];
@@ -96,7 +101,9 @@ async fn main(spawner: Spawner) -> ! {
         );
         info!(
             "NOW now_elapsed_since_1970 {:?}",
-            Debug2Format(&(since_1970.now_elapsed_since_1970(now.elapsed().as_secs())))
+            Debug2Format(
+                &(now_plus_elapsed_since_1970(since_1970.as_secs(), now.elapsed().as_secs()))
+            )
         );
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));

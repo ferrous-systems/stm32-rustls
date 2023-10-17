@@ -3,9 +3,6 @@
 
 extern crate alloc;
 use core::mem::MaybeUninit;
-use embassy_time::{Duration, Instant};
-use rustls_pki_types::UnixTime;
-const EPOCH_70: u64 = 100;
 use embedded_alloc::Heap;
 use spin;
 

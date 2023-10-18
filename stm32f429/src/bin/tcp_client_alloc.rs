@@ -11,7 +11,6 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::Ipv4Address;
 
-use embassy_stm32::{bind_interrupts, eth, peripherals, rng};
 use embassy_time::{Duration, Instant, Timer};
 
 use stm32f429 as _;

@@ -3,6 +3,7 @@
 
 extern crate alloc;
 use core::mem::MaybeUninit;
+use cortex_m_semihosting::debug;
 use embedded_alloc::Heap;
 use spin;
 
@@ -22,4 +23,10 @@ pub fn init_heap() {
 
 pub fn now_plus_elapsed_since_1970(unix: u64, monotonic_now: u64) -> u64 {
     monotonic_now + unix
+}
+
+pub fn exit() -> ! {
+    loop {
+        debug::exit(debug::EXIT_SUCCESS);
+    }
 }

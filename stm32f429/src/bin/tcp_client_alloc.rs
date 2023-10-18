@@ -82,8 +82,10 @@ async fn main(spawner: Spawner) -> ! {
 
     // Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
+    // Ensure DHCP configuration is up before trying connect
+    stack.wait_config_up().await;
 
-    //info!("Network task initialized");
+    info!("Network task initialized");
 
     // Then we can use it!
     let mut rx_buffer = [0; 4096];

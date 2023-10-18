@@ -14,7 +14,6 @@ use embassy_stm32::peripherals::ETH;
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embedded_alloc::Heap;
 use spin;
-type Device = Ethernet<'static, ETH, GenericSMI>;
 
 const HEAP_SIZE: usize = 1024;
 #[global_allocator]

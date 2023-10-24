@@ -2,9 +2,7 @@
 #![no_std]
 
 extern crate alloc;
-
 use core::mem::MaybeUninit;
-//use core::prelude::v1::global_allocator;
 use embedded_alloc::Heap;
 use spin;
 
@@ -20,4 +18,8 @@ pub fn init_heap() {
             HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE);
         }
     });
+}
+
+pub fn now_plus_elapsed_since_1970(unix: u64, monotonic_now: u64) -> u64 {
+    monotonic_now + unix
 }

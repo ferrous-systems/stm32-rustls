@@ -3,21 +3,23 @@
 #![feature(type_alias_impl_trait)]
 extern crate alloc;
 use alloc::vec;
+
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Address, Stack, StackResources};
 use embassy_stm32::eth::generic_smi::GenericSMI;
-use embassy_stm32::eth::{Ethernet, PacketQueue};
+use embassy_stm32::eth::Ethernet;
+use embassy_stm32::eth::PacketQueue;
 use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
-use embassy_time::Duration;
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
+use rustls_pki_types::UnixTime;
 use static_cell::make_static;
 use stm32f429 as _;
 use stm32f429::init_heap;
-
+use stm32f429::now_plus_elapsed_since_1970;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -25,6 +27,7 @@ bind_interrupts!(struct Irqs {
     HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
+const DURATION_SINCE_1970: u64 = 1697530048;
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
 #[embassy_executor::task]
@@ -38,8 +41,10 @@ async fn main(spawner: Spawner) -> ! {
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
 
-    info!("Hello World!");
+    let now = Instant::now();
 
+    // Must apparently be converted in coretime duration
+    let since_1970 = UnixTime::since_unix_epoch(Duration::from_secs(DURATION_SINCE_1970).into());
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];
@@ -77,6 +82,8 @@ async fn main(spawner: Spawner) -> ! {
 
     // Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
+    // Ensure DHCP configuration is up before trying connect
+    stack.wait_config_up().await;
 
     info!("Network task initialized");
 
@@ -89,6 +96,17 @@ async fn main(spawner: Spawner) -> ! {
     let msg = vec![104, 101, 108, 108, 111];
 
     loop {
+        info!("since_1970 {:?}", Debug2Format(&since_1970));
+        info!(
+            "now.elapsed().as_secs() {:?}",
+            Debug2Format(&now.elapsed().as_secs())
+        );
+        info!(
+            "NOW now_elapsed_since_1970 {:?}",
+            Debug2Format(
+                &(now_plus_elapsed_since_1970(since_1970.as_secs(), now.elapsed().as_secs()))
+            )
+        );
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));
         let add = "192.168.50.67".parse::<Ipv4Address>().unwrap();

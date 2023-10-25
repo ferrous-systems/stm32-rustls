@@ -1,91 +1,28 @@
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+
 extern crate alloc;
+
 use alloc::vec;
 
 use defmt::*;
+
 use embassy_executor::Spawner;
-use embassy_net::{Ipv4Address, Stack, StackResources};
-use embassy_stm32::eth::generic_smi::GenericSMI;
-use embassy_stm32::eth::Ethernet;
-use embassy_stm32::eth::PacketQueue;
-use embassy_stm32::peripherals::ETH;
-use embassy_stm32::rng::Rng;
-use embassy_stm32::time::mhz;
-use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
+use embassy_net::Ipv4Address;
+
 use embassy_time::{Duration, Instant, Timer};
-use rustls_pki_types::UnixTime;
-use static_cell::make_static;
+
 use stm32f429 as _;
-use stm32f429::init_heap;
-use stm32f429::now_plus_elapsed_since_1970;
+use stm32f429::{
+    get_time_from_ntp_server, init_heap, network_task_init, now_plus_elapsed_since_1900,
+};
 use {defmt_rtt as _, panic_probe as _};
-
-bind_interrupts!(struct Irqs {
-    ETH => eth::InterruptHandler;
-    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
-});
-
-const DURATION_SINCE_1970: u64 = 1697530048;
-type Device = Ethernet<'static, ETH, GenericSMI>;
-
-#[embassy_executor::task]
-async fn net_task(stack: &'static Stack<Device>) -> ! {
-    stack.run().await
-}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) -> ! {
-    let mut config = Config::default();
-    config.rcc.sys_ck = Some(mhz(100));
-    let p = embassy_stm32::init(config);
 
-    let now = Instant::now();
-
-    // Must apparently be converted in coretime duration
-    let since_1970 = UnixTime::since_unix_epoch(Duration::from_secs(DURATION_SINCE_1970).into());
-    // Generate random seed.
-    let mut rng = Rng::new(p.RNG, Irqs);
-    let mut seed = [0; 8];
-    let _ = rng.async_fill_bytes(&mut seed).await;
-    let seed = u64::from_le_bytes(seed);
-
-    let mac_addr = [6, 5, 4, 3, 2, 1];
-
-    let device = Ethernet::new(
-        make_static!(PacketQueue::<16, 16>::new()),
-        p.ETH,
-        Irqs,
-        p.PA1,
-        p.PA2,
-        p.PC1,
-        p.PA7,
-        p.PC4,
-        p.PC5,
-        p.PG13,
-        p.PB13,
-        p.PG11,
-        GenericSMI::new(0),
-        mac_addr,
-    );
-
-    let config = embassy_net::Config::dhcpv4(Default::default());
-
-    // Init network stack
-    let stack = &*make_static!(Stack::new(
-        device,
-        config,
-        make_static!(StackResources::<2>::new()),
-        seed
-    ));
-
-    // Launch network task
-    unwrap!(spawner.spawn(net_task(&stack)));
-    // Ensure DHCP configuration is up before trying connect
-    stack.wait_config_up().await;
-
-    info!("Network task initialized");
+    let stack = network_task_init(spawner).await;
 
     // Then we can use it!
     let mut rx_buffer = [0; 4096];
@@ -94,18 +31,13 @@ async fn main(spawner: Spawner) -> ! {
     // send a hello message
     init_heap();
     let msg = vec![104, 101, 108, 108, 111];
+    let now = Instant::now();
+    let transmit_seconds = get_time_from_ntp_server(stack).await;
 
     loop {
-        info!("since_1970 {:?}", Debug2Format(&since_1970));
         info!(
-            "now.elapsed().as_secs() {:?}",
-            Debug2Format(&now.elapsed().as_secs())
-        );
-        info!(
-            "NOW now_elapsed_since_1970 {:?}",
-            Debug2Format(
-                &(now_plus_elapsed_since_1970(since_1970.as_secs(), now.elapsed().as_secs()))
-            )
+            "Elapsed time with NTP info{:?}",
+            Debug2Format(&(now_plus_elapsed_since_1900(transmit_seconds, now.elapsed().as_secs())))
         );
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));

@@ -48,6 +48,7 @@ embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a4
     "dns",
 ] }
 
+
 defmt = "0.3"
 defmt-rtt = "0.4"
 cortex-m-semihosting = "0.5.0"
@@ -72,7 +73,8 @@ chrono = { version = "^0.4", default-features = false }
 embedded-alloc = "0.5.0"
 spin = "0.9.8"
 rustls-pki-types = "0.2.1"
-
+#rustls = { git = "https://github.com/japaric/rustls", branch = "VOLATILE-no-std-support" }
+#getrandom = { version = "0.2.10", features = ["rdrand"] }
 [profile.release]
 debug = 2
 opt-level = "z"

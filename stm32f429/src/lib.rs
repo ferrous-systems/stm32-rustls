@@ -44,24 +44,25 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
         prf_provider: &rustls::crypto::tls12::PrfUsingHmac(&hmac::Sha256Hmac),
         aead_alg: &aead::Chacha20Poly1305,
     });
-#[derive(Debug)]
-struct DemoCryptoProvider;
-impl CryptoProvider for DemoCryptoProvider {
-    fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
-        use rand_core::RngCore;
-        rand_core::OsRng
-            .try_fill_bytes(bytes)
-            .map_err(|_| rustls::crypto::GetRandomFailed)
-    }
+// #[derive(Debug)]
+// struct DemoCryptoProvider;
+// impl CryptoProvider for DemoCryptoProvider {
+//     fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
+//         // replace with the HAL random generator (embassy HAL)
+//         use rand_core::RngCore;
+//         rand_core::OsRng
+//             .try_fill_bytes(bytes)
+//             .map_err(|_| rustls::crypto::GetRandomFailed)
+//     }
 
-    fn default_cipher_suites(&self) -> &'static [rustls::SupportedCipherSuite] {
-        ALL_CIPHER_SUITES
-    }
+//     fn default_cipher_suites(&self) -> &'static [rustls::SupportedCipherSuite] {
+//         ALL_CIPHER_SUITES
+//     }
 
-    fn default_kx_groups(&self) -> &'static [&'static dyn rustls::crypto::SupportedKxGroup] {
-        kx::ALL_KX_GROUPS
-    }
-}
+//     fn default_kx_groups(&self) -> &'static [&'static dyn rustls::crypto::SupportedKxGroup] {
+//         kx::ALL_KX_GROUPS
+//     }
+// }
 
 const HEAP_SIZE: usize = 1024;
 #[global_allocator]
@@ -87,6 +88,9 @@ pub fn exit() -> ! {
     }
 }
 
+// wrap that in a trait object
+// the method must be wrapped in a struct
+// this is the init
 pub async fn get_time_from_ntp_server(
     stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>,
 ) -> u64 {
@@ -144,9 +148,7 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
 pub async fn network_task_init(
     spawner: Spawner,
 ) -> &'static Stack<Ethernet<'static, ETH, GenericSMI>> {
-    let mut config = Config::default();
-    config.rcc.sys_ck = Some(mhz(100));
-    let p = embassy_stm32::init(config);
+    let p = return_peripheral();
 
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
@@ -190,4 +192,11 @@ pub async fn network_task_init(
 
     info!("Network task initialized");
     stack
+}
+
+fn return_peripheral() -> embassy_stm32::Peripherals {
+    let mut config = Config::default();
+    config.rcc.sys_ck = Some(mhz(100));
+    let p = embassy_stm32::init(config);
+    p
 }

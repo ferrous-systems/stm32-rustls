@@ -21,7 +21,6 @@ use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) -> ! {
-
     let stack = network_task_init(spawner).await;
 
     // Then we can use it!
@@ -32,6 +31,7 @@ async fn main(spawner: Spawner) -> ! {
     init_heap();
     let msg = vec![104, 101, 108, 108, 111];
     let now = Instant::now();
+    // make get_current_time instead that wraps
     let transmit_seconds = get_time_from_ntp_server(stack).await;
 
     loop {

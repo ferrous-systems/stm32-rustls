@@ -38,6 +38,7 @@ fn main() -> Result<(), Error> {
     // why do we need certfiles
     let mut certfile: &[_] = include_bytes!("/home/japaric/.local/share/mkcert/rootCA.pem");
     let mut certs = vec![];
+    // has no_std support
     while let Ok(Some((item, rest))) = rustls_pemfile::read_one_from_slice(certfile) {
         certfile = rest;
         if let Item::X509Certificate(cert) = item {
@@ -55,6 +56,7 @@ fn main() -> Result<(), Error> {
         .with_no_client_auth();
 
     // Time provider is a wrapper for unixtime?
+    // try with a dummy
     config.time_provider = demo::time_provider();
 
     let sock_addr = (SERVER_NAME, PORT)
@@ -82,8 +84,10 @@ fn main() -> Result<(), Error> {
 
     let mut open_connection = true;
 
+    // read and write must be replace with async embassy methods
     while open_connection {
         let Status { discard, state } =
+        // incomnig_tls can contain several records and records already read must be removed
             conn.process_tls_records(&mut incoming_tls[..incoming_used])?;
         match state {
             // logic similar to the one presented in the 'handling InsufficientSizeError' section is
@@ -113,20 +117,22 @@ fn main() -> Result<(), Error> {
                 state.done();
             }
 
+            // client is expecting
             State::NeedsMoreTlsData { .. } => {
                 // NOTE real code needs to handle the scenario where `incoming_tls` is not big enough
                 let read = sock.read(&mut incoming_tls[incoming_used..])?;
                 incoming_used += read;
             }
-
+            // after handshake, http response from server
             State::AppDataAvailable(mut records) => {
                 while let Some(result) = records.next_record() {
                     let AppDataRecord { payload, .. } = result?;
-
+                    // transmission is over
+                    // assertion here? that the http response is in the right format or 200
                     println!("response:\n{:?}", str::from_utf8(payload))?;
                 }
             }
-
+            // between handshake and application data
             State::TrafficTransit(mut traffic_transit) => {
                 // post-handshake logic
                 let request = request.as_bytes();

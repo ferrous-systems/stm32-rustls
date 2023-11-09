@@ -47,7 +47,7 @@ embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a4
     "udp",
     "dns",
 ] }
-
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a46682f76dcc4d75f9ba4ce80dfb4193" }
 
 defmt = "0.3"
 defmt-rtt = "0.4"
@@ -81,6 +81,8 @@ chacha20poly1305 = { version = "0.10.1", default-features = false, features = [
     "alloc",
 ] }
 hmac = "0.12.1"
+x25519-dalek = { version = "2.0.0", default-features = false }
+rand_core = { version = "0.6.4", default-features = false }
 [profile.release]
 debug = 2
 opt-level = "z"

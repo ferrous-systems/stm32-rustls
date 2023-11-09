@@ -5,8 +5,10 @@
 mod aead;
 mod hash;
 mod hmac;
-
+mod kx;
 extern crate alloc;
+// https://dev.to/apollolabsbin/sharing-data-among-tasks-in-rust-embassy-synchronization-primitives-59hk
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use static_cell::make_static;
 
 use core::{mem::MaybeUninit, ops::Range};
@@ -17,18 +19,23 @@ use embassy_net::{
     udp::{PacketMetadata, UdpSocket},
     IpAddress, IpEndpoint, Ipv4Address, Stack, StackResources,
 };
-use embassy_stm32::eth::PacketQueue;
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
+use embassy_stm32::{eth::PacketQueue, peripherals::RNG};
 use embedded_alloc::Heap;
 use rustls::crypto::CryptoProvider;
 use spin;
 
 static ALL_CIPHER_SUITES: &[rustls::SupportedCipherSuite] =
     &[TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256];
+
+// static RNG_CELL: StaticCell<Mutex<ThreadModeRawMutex, embassy_stm32::rng::Rng<'_, RNG>>> =
+//     StaticCell::new();
+
+static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> = Mutex::new(None);
 
 pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
     rustls::SupportedCipherSuite::Tls12(&rustls::Tls12CipherSuite {
@@ -44,25 +51,26 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
         prf_provider: &rustls::crypto::tls12::PrfUsingHmac(&hmac::Sha256Hmac),
         aead_alg: &aead::Chacha20Poly1305,
     });
-// #[derive(Debug)]
-// struct DemoCryptoProvider;
-// impl CryptoProvider for DemoCryptoProvider {
-//     fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
-//         // replace with the HAL random generator (embassy HAL)
-//         use rand_core::RngCore;
-//         rand_core::OsRng
-//             .try_fill_bytes(bytes)
-//             .map_err(|_| rustls::crypto::GetRandomFailed)
-//     }
+#[derive(Debug)]
+struct DemoCryptoProvider;
+impl CryptoProvider for DemoCryptoProvider {
+    fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
+        embassy_futures::block_on(async {
+            let mut  binding = RNG_MUTEX.lock().await;
+            let rng = binding.as_mut().unwrap();
+            rng.async_fill_bytes(bytes).
+                await.map_err(|_| rustls::crypto::GetRandomFailed)
+        })
+    }
 
-//     fn default_cipher_suites(&self) -> &'static [rustls::SupportedCipherSuite] {
-//         ALL_CIPHER_SUITES
-//     }
+    fn default_cipher_suites(&self) -> &'static [rustls::SupportedCipherSuite] {
+        ALL_CIPHER_SUITES
+    }
 
-//     fn default_kx_groups(&self) -> &'static [&'static dyn rustls::crypto::SupportedKxGroup] {
-//         kx::ALL_KX_GROUPS
-//     }
-// }
+    fn default_kx_groups(&self) -> &'static [&'static dyn rustls::crypto::SupportedKxGroup] {
+        kx::ALL_KX_GROUPS
+    }
+}
 
 const HEAP_SIZE: usize = 1024;
 #[global_allocator]
@@ -148,13 +156,15 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
 pub async fn network_task_init(
     spawner: Spawner,
 ) -> &'static Stack<Ethernet<'static, ETH, GenericSMI>> {
-    let p = return_peripheral();
+    let mut config = Config::default();
+    config.rcc.sys_ck = Some(mhz(100));
+    let p = embassy_stm32::init(config);
+    RNG_MUTEX.lock().await.replace(Rng::new(p.RNG, Irqs));
 
-    // Generate random seed.
-    let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];
-    let _ = rng.async_fill_bytes(&mut seed).await;
+    let _ = RNG_MUTEX.lock().await.as_mut().unwrap().async_fill_bytes(&mut seed).await;
     let seed = u64::from_le_bytes(seed);
+    
 
     let mac_addr = [6, 5, 4, 3, 2, 1];
 
@@ -192,11 +202,4 @@ pub async fn network_task_init(
 
     info!("Network task initialized");
     stack
-}
-
-fn return_peripheral() -> embassy_stm32::Peripherals {
-    let mut config = Config::default();
-    config.rcc.sys_ck = Some(mhz(100));
-    let p = embassy_stm32::init(config);
-    p
 }

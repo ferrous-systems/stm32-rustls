@@ -55,6 +55,7 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
 struct DemoCryptoProvider;
 impl CryptoProvider for DemoCryptoProvider {
     fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
+        // This is a non async task so I need embassy_futures
         embassy_futures::block_on(async {
             let mut  binding = RNG_MUTEX.lock().await;
             let rng = binding.as_mut().unwrap();
@@ -159,12 +160,13 @@ pub async fn network_task_init(
     let mut config = Config::default();
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
-    RNG_MUTEX.lock().await.replace(Rng::new(p.RNG, Irqs));
-
+    // Using RNG ...
+    let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];
-    let _ = RNG_MUTEX.lock().await.as_mut().unwrap().async_fill_bytes(&mut seed).await;
+    let _ = rng.async_fill_bytes(&mut seed).await;
     let seed = u64::from_le_bytes(seed);
-    
+    // ... before putting it in the mutex
+    RNG_MUTEX.lock().await.replace(rng);
 
     let mac_addr = [6, 5, 4, 3, 2, 1];
 

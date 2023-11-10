@@ -2,13 +2,9 @@
 #![no_std]
 #![feature(type_alias_impl_trait)]
 
-mod aead;
-mod hash;
-mod hmac;
-mod kx;
+mod democryptoprovider;
+
 extern crate alloc;
-// https://dev.to/apollolabsbin/sharing-data-among-tasks-in-rust-embassy-synchronization-primitives-59hk
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use static_cell::make_static;
 
 use core::{mem::MaybeUninit, ops::Range};
@@ -25,34 +21,17 @@ use embassy_stm32::rng::Rng;
 use embassy_stm32::{bind_interrupts, eth, peripherals, rng};
 use embassy_stm32::{eth::PacketQueue, peripherals::RNG};
 use embedded_alloc::Heap;
-use rustls::crypto::CryptoProvider;
 use spin;
-
-static ALL_CIPHER_SUITES: &[rustls::SupportedCipherSuite] =
-    &[TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256];
-
-static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> =
-    Mutex::new(None);
-
-pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
-    rustls::SupportedCipherSuite::Tls12(&rustls::Tls12CipherSuite {
-        common: rustls::cipher_suite::CipherSuiteCommon {
-            suite: rustls::CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-            hash_provider: &hash::Sha256,
-        },
-        kx: rustls::crypto::KeyExchangeAlgorithm::ECDHE,
-        sign: &[
-            rustls::SignatureScheme::RSA_PSS_SHA256,
-            rustls::SignatureScheme::RSA_PKCS1_SHA256,
-        ],
-        prf_provider: &rustls::crypto::tls12::PrfUsingHmac(&hmac::Sha256Hmac),
-        aead_alg: &aead::Chacha20Poly1305,
-    });
+// https://dev.to/apollolabsbin/sharing-data-among-tasks-in-rust-embassy-synchronization-primitives-59hk
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 
 bind_interrupts!(struct Irqs {
     ETH => eth::InterruptHandler;
     HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
+
+static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> =
+    Mutex::new(None);
 
 // Separating the board from the network init task
 pub struct Board {
@@ -92,28 +71,6 @@ impl Board {
             tx_en: p.PG11,
             rng: Rng::new(p.RNG, Irqs),
         }
-    }
-}
-#[derive(Debug)]
-struct DemoCryptoProvider;
-impl CryptoProvider for DemoCryptoProvider {
-    fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
-        // This is a non async task so I need embassy_futures
-        embassy_futures::block_on(async {
-            let mut binding = RNG_MUTEX.lock().await;
-            let rng = binding.as_mut().unwrap();
-            rng.async_fill_bytes(bytes)
-                .await
-                .map_err(|_| rustls::crypto::GetRandomFailed)
-        })
-    }
-
-    fn default_cipher_suites(&self) -> &'static [rustls::SupportedCipherSuite] {
-        ALL_CIPHER_SUITES
-    }
-
-    fn default_kx_groups(&self) -> &'static [&'static dyn rustls::crypto::SupportedKxGroup] {
-        kx::ALL_KX_GROUPS
     }
 }
 

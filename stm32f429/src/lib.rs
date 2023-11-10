@@ -22,8 +22,7 @@ use embassy_net::{
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
-use embassy_stm32::time::mhz;
-use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
+use embassy_stm32::{bind_interrupts, eth, peripherals, rng};
 use embassy_stm32::{eth::PacketQueue, peripherals::RNG};
 use embedded_alloc::Heap;
 use rustls::crypto::CryptoProvider;
@@ -32,10 +31,8 @@ use spin;
 static ALL_CIPHER_SUITES: &[rustls::SupportedCipherSuite] =
     &[TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256];
 
-// static RNG_CELL: StaticCell<Mutex<ThreadModeRawMutex, embassy_stm32::rng::Rng<'_, RNG>>> =
-//     StaticCell::new();
-
-static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> = Mutex::new(None);
+static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> =
+    Mutex::new(None);
 
 pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
     rustls::SupportedCipherSuite::Tls12(&rustls::Tls12CipherSuite {
@@ -51,16 +48,63 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
         prf_provider: &rustls::crypto::tls12::PrfUsingHmac(&hmac::Sha256Hmac),
         aead_alg: &aead::Chacha20Poly1305,
     });
+
+bind_interrupts!(struct Irqs {
+    ETH => eth::InterruptHandler;
+    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
+});
+
+// Separating the board from the network init task
+pub struct Board {
+    // Pins for ethernet
+    peri: embassy_stm32::peripherals::ETH,
+    irqs: Irqs,
+    ref_clk: embassy_stm32::peripherals::PA1,
+    // management data input output between PHY and MAC layers
+    mdio: embassy_stm32::peripherals::PA2,
+    // management data clock, for sync between PHY and MAC
+    mdc: embassy_stm32::peripherals::PC1,
+    // carrier sense, sensing if data is transmitted
+    crs: embassy_stm32::peripherals::PA7,
+    rx_d0: embassy_stm32::peripherals::PC4,
+    rx_d1: embassy_stm32::peripherals::PC5,
+    tx_d0: embassy_stm32::peripherals::PG13,
+    tx_d1: embassy_stm32::peripherals::PB13,
+    // transmit enable
+    tx_en: embassy_stm32::peripherals::PG11,
+    // our random souce
+    rng: embassy_stm32::rng::Rng<'static, RNG>,
+}
+
+impl Board {
+    pub fn new(p: embassy_stm32::Peripherals) -> Self {
+        Self {
+            peri: p.ETH,
+            irqs: Irqs,
+            ref_clk: p.PA1,
+            mdio: p.PA2,
+            mdc: p.PC1,
+            crs: p.PA7,
+            rx_d0: p.PC4,
+            rx_d1: p.PC5,
+            tx_d0: p.PG13,
+            tx_d1: p.PB13,
+            tx_en: p.PG11,
+            rng: Rng::new(p.RNG, Irqs),
+        }
+    }
+}
 #[derive(Debug)]
 struct DemoCryptoProvider;
 impl CryptoProvider for DemoCryptoProvider {
     fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
         // This is a non async task so I need embassy_futures
         embassy_futures::block_on(async {
-            let mut  binding = RNG_MUTEX.lock().await;
+            let mut binding = RNG_MUTEX.lock().await;
             let rng = binding.as_mut().unwrap();
-            rng.async_fill_bytes(bytes).
-                await.map_err(|_| rustls::crypto::GetRandomFailed)
+            rng.async_fill_bytes(bytes)
+                .await
+                .map_err(|_| rustls::crypto::GetRandomFailed)
         })
     }
 
@@ -99,6 +143,7 @@ pub fn exit() -> ! {
 
 // wrap that in a trait object
 // the method must be wrapped in a struct
+// in TimeProvider
 // this is the init
 pub async fn get_time_from_ntp_server(
     stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>,
@@ -143,10 +188,6 @@ pub async fn get_time_from_ntp_server(
     transmit_seconds.into()
 }
 
-bind_interrupts!(struct Irqs {
-    ETH => eth::InterruptHandler;
-    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
-});
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
 #[embassy_executor::task]
@@ -156,40 +197,37 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
 
 pub async fn network_task_init(
     spawner: Spawner,
+    mut board: Board,
 ) -> &'static Stack<Ethernet<'static, ETH, GenericSMI>> {
-    let mut config = Config::default();
-    config.rcc.sys_ck = Some(mhz(100));
-    let p = embassy_stm32::init(config);
     // Using RNG ...
-    let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];
-    let _ = rng.async_fill_bytes(&mut seed).await;
+    let _ = board.rng.async_fill_bytes(&mut seed).await;
     let seed = u64::from_le_bytes(seed);
-    // ... before putting it in the mutex
-    RNG_MUTEX.lock().await.replace(rng);
+    // ... before putting it in the mutex for access from other modules
+    RNG_MUTEX.lock().await.replace(board.rng);
 
     let mac_addr = [6, 5, 4, 3, 2, 1];
 
     let device = Ethernet::new(
         make_static!(PacketQueue::<16, 16>::new()),
-        p.ETH,
-        Irqs,
-        p.PA1,
-        p.PA2,
-        p.PC1,
-        p.PA7,
-        p.PC4,
-        p.PC5,
-        p.PG13,
-        p.PB13,
-        p.PG11,
+        board.peri,
+        board.irqs,
+        board.ref_clk,
+        board.mdio,
+        board.mdc,
+        board.crs,
+        board.rx_d0,
+        board.rx_d1,
+        board.tx_d0,
+        board.tx_d1,
+        board.tx_en,
         GenericSMI::new(0),
         mac_addr,
     );
 
     let config = embassy_net::Config::dhcpv4(Default::default());
 
-    // Init network stack
+    //Init network stack
     let stack = &*make_static!(Stack::new(
         device,
         config,
@@ -198,7 +236,7 @@ pub async fn network_task_init(
         seed
     ));
 
-    // Launch network task
+    //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
 

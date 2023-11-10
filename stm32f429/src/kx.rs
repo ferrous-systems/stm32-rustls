@@ -37,10 +37,9 @@ pub struct X25519;
 
 impl crypto::SupportedKxGroup for X25519 {
     fn start(&self) -> Result<Box<dyn crypto::ActiveKeyExchange>, rustls::crypto::GetRandomFailed> {
-
         let priv_key = embassy_futures::block_on(async {
-            let mut binding = crate::RNG_MUTEX.lock().await;
-            let rng = binding.as_mut().unwrap();
+            let mut board_rng = crate::RNG_MUTEX.lock().await;
+            let rng = board_rng.as_mut().unwrap();
             x25519_dalek::EphemeralSecret::random_from_rng(rng)
         });
         Ok(Box::new(KeyExchange {

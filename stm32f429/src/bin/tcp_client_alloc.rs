@@ -10,10 +10,12 @@ use defmt::*;
 
 use embassy_executor::Spawner;
 use embassy_net::Ipv4Address;
+use embassy_stm32::Config;
 
+use embassy_stm32::time::mhz;
 use embassy_time::{Duration, Instant, Timer};
 
-use stm32f429 as _;
+use stm32f429::{self as _, Board};
 use stm32f429::{
     get_time_from_ntp_server, init_heap, network_task_init, now_plus_elapsed_since_1900,
 };
@@ -21,8 +23,12 @@ use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) -> ! {
+    let mut config = Config::default();
+    config.rcc.sys_ck = Some(mhz(100));
+    let p = embassy_stm32::init(config);
+    let board = Board::new(p);
 
-    let stack = network_task_init(spawner).await;
+    let stack = network_task_init(spawner, board).await;
 
     // Then we can use it!
     let mut rx_buffer = [0; 4096];
@@ -32,6 +38,7 @@ async fn main(spawner: Spawner) -> ! {
     init_heap();
     let msg = vec![104, 101, 108, 108, 111];
     let now = Instant::now();
+    // make get_current_time instead that wraps
     let transmit_seconds = get_time_from_ntp_server(stack).await;
 
     loop {

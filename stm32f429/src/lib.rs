@@ -1,6 +1,9 @@
 #![no_main]
 #![no_std]
 #![feature(type_alias_impl_trait)]
+
+mod democryptoprovider;
+
 extern crate alloc;
 use static_cell::make_static;
 
@@ -12,14 +15,64 @@ use embassy_net::{
     udp::{PacketMetadata, UdpSocket},
     IpAddress, IpEndpoint, Ipv4Address, Stack, StackResources,
 };
-use embassy_stm32::eth::PacketQueue;
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
-use embassy_stm32::time::mhz;
-use embassy_stm32::{bind_interrupts, eth, peripherals, rng, Config};
+use embassy_stm32::{bind_interrupts, eth, peripherals, rng};
+use embassy_stm32::{eth::PacketQueue, peripherals::RNG};
 use embedded_alloc::Heap;
 use spin;
+// https://dev.to/apollolabsbin/sharing-data-among-tasks-in-rust-embassy-synchronization-primitives-59hk
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
+
+bind_interrupts!(struct Irqs {
+    ETH => eth::InterruptHandler;
+    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
+});
+
+static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> =
+    Mutex::new(None);
+
+// Separating the board from the network init task
+pub struct Board {
+    // Pins for ethernet
+    peri: embassy_stm32::peripherals::ETH,
+    irqs: Irqs,
+    ref_clk: embassy_stm32::peripherals::PA1,
+    // management data input output between PHY and MAC layers
+    mdio: embassy_stm32::peripherals::PA2,
+    // management data clock, for sync between PHY and MAC
+    mdc: embassy_stm32::peripherals::PC1,
+    // carrier sense, sensing if data is transmitted
+    crs: embassy_stm32::peripherals::PA7,
+    rx_d0: embassy_stm32::peripherals::PC4,
+    rx_d1: embassy_stm32::peripherals::PC5,
+    tx_d0: embassy_stm32::peripherals::PG13,
+    tx_d1: embassy_stm32::peripherals::PB13,
+    // transmit enable
+    tx_en: embassy_stm32::peripherals::PG11,
+    // our random souce
+    rng: embassy_stm32::rng::Rng<'static, RNG>,
+}
+
+impl Board {
+    pub fn new(p: embassy_stm32::Peripherals) -> Self {
+        Self {
+            peri: p.ETH,
+            irqs: Irqs,
+            ref_clk: p.PA1,
+            mdio: p.PA2,
+            mdc: p.PC1,
+            crs: p.PA7,
+            rx_d0: p.PC4,
+            rx_d1: p.PC5,
+            tx_d0: p.PG13,
+            tx_d1: p.PB13,
+            tx_en: p.PG11,
+            rng: Rng::new(p.RNG, Irqs),
+        }
+    }
+}
 
 const HEAP_SIZE: usize = 1024;
 #[global_allocator]
@@ -45,6 +98,10 @@ pub fn exit() -> ! {
     }
 }
 
+// wrap that in a trait object
+// the method must be wrapped in a struct
+// in TimeProvider
+// this is the init
 pub async fn get_time_from_ntp_server(
     stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>,
 ) -> u64 {
@@ -88,10 +145,6 @@ pub async fn get_time_from_ntp_server(
     transmit_seconds.into()
 }
 
-bind_interrupts!(struct Irqs {
-    ETH => eth::InterruptHandler;
-    HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
-});
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
 #[embassy_executor::task]
@@ -101,39 +154,37 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
 
 pub async fn network_task_init(
     spawner: Spawner,
+    mut board: Board,
 ) -> &'static Stack<Ethernet<'static, ETH, GenericSMI>> {
-    let mut config = Config::default();
-    config.rcc.sys_ck = Some(mhz(100));
-    let p = embassy_stm32::init(config);
-
-    // Generate random seed.
-    let mut rng = Rng::new(p.RNG, Irqs);
+    // Using RNG ...
     let mut seed = [0; 8];
-    let _ = rng.async_fill_bytes(&mut seed).await;
+    let _ = board.rng.async_fill_bytes(&mut seed).await;
     let seed = u64::from_le_bytes(seed);
+    // ... before putting it in the mutex for access from other modules
+    RNG_MUTEX.lock().await.replace(board.rng);
 
     let mac_addr = [6, 5, 4, 3, 2, 1];
 
     let device = Ethernet::new(
         make_static!(PacketQueue::<16, 16>::new()),
-        p.ETH,
-        Irqs,
-        p.PA1,
-        p.PA2,
-        p.PC1,
-        p.PA7,
-        p.PC4,
-        p.PC5,
-        p.PG13,
-        p.PB13,
-        p.PG11,
+        board.peri,
+        board.irqs,
+        board.ref_clk,
+        board.mdio,
+        board.mdc,
+        board.crs,
+        board.rx_d0,
+        board.rx_d1,
+        board.tx_d0,
+        board.tx_d1,
+        board.tx_en,
         GenericSMI::new(0),
         mac_addr,
     );
 
     let config = embassy_net::Config::dhcpv4(Default::default());
 
-    // Init network stack
+    //Init network stack
     let stack = &*make_static!(Stack::new(
         device,
         config,
@@ -142,7 +193,7 @@ pub async fn network_task_init(
         seed
     ));
 
-    // Launch network task
+    //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
 

@@ -7,20 +7,21 @@ use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
 use embassy_time::{Duration, Instant};
 use rustls_pki_types::UnixTime;
-
+const TIME_BETWEEN_1900_1970: u64 = 2_208_988_800;
 pub struct DemoTimeProvider;
 
 impl DemoTimeProvider {
     pub fn new() -> Self {
         Self
     }
-    pub async fn now_plus_elapsed_since_1900(
+    pub async fn get_current_time(
         &self,
         stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>,
     ) -> Result<UnixTime, ()> {
         let now = Instant::now().elapsed().as_secs();
         let elapsed_since_1900 = self.get_time_from_ntp_server(stack).await;
-        let total = Duration::from_secs(now + elapsed_since_1900).into();
+        let remove_before_1970 = elapsed_since_1900 - TIME_BETWEEN_1900_1970;
+        let total = Duration::from_secs(now + remove_before_1970).into();
         Ok(UnixTime::since_unix_epoch(total))
     }
     pub async fn get_time_from_ntp_server(

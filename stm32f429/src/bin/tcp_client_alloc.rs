@@ -40,7 +40,7 @@ async fn main(spawner: Spawner) -> ! {
     let time_provider = DemoTimeProvider::new();
 
     // make get_current_time instead that wraps
-    let seconds = time_provider.now_plus_elapsed_since_1900(stack).await;
+    let seconds = time_provider.get_current_time(stack).await;
 
     loop {
         warn!(

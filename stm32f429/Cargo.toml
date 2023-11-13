@@ -73,7 +73,7 @@ chrono = { version = "^0.4", default-features = false }
 embedded-alloc = "0.5.0"
 spin = "0.9.8"
 rustls-pki-types = "0.2.1"
-rustls = { git = "https://github.com/japaric/rustls", branch = "VOLATILE-no-std-support", default-features = false, features = [
+rustls = { git = "https://github.com/japaric/rustls", branch = "VOLATILE-no-std-support-2", default-features = false, features = [
     "tls12",
 ] }
 sha2 = { version = "0.10.8", default-features = false }

@@ -15,8 +15,9 @@ use embassy_stm32::Config;
 use embassy_stm32::time::mhz;
 use embassy_time::{Duration, Timer};
 
-use stm32f429::{self as _, Board};
-use stm32f429::{init_heap, network_task_init, DemoTimeProvider};
+use stm32f429::demotimeprovider::DemoTimeProvider;
+use stm32f429::{self as _, board::Board};
+use stm32f429::{init_heap, network_task_init};
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -42,14 +43,14 @@ async fn main(spawner: Spawner) -> ! {
     let seconds = time_provider.now_plus_elapsed_since_1900(stack).await;
 
     loop {
-        info!(
+        warn!(
             "Elapsed time with NTP info{:?}",
             Debug2Format(&(seconds.unwrap()))
         );
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));
         let add = "192.168.50.67".parse::<Ipv4Address>().unwrap();
-        info!("Listening on TCP:1234...");
+
         if let Err(e) = socket.connect((add, 1234)).await {
             warn!("connect error: {:?}", e);
             Timer::after(Duration::from_secs(3)).await;

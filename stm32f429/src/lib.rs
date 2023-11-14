@@ -14,7 +14,7 @@ use static_cell::make_static;
 
 use core::mem::MaybeUninit;
 use cortex_m_semihosting::debug;
-use defmt::{info, unwrap};
+use defmt::{info, unwrap, Debug2Format};
 use embassy_executor::Spawner;
 use embassy_net::{Stack, StackResources};
 use embassy_stm32::{
@@ -23,11 +23,13 @@ use embassy_stm32::{
     peripherals::{self, ETH, RNG},
     rng,
 };
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use embedded_alloc::Heap;
 
 use spin;
+
+use crate::demotimeprovider::get_time_from_ntp_server;
 // https://dev.to/apollolabsbin/sharing-data-among-tasks-in-rust-embassy-synchronization-primitives-59hk
-use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 
 static RNG_MUTEX: Mutex<ThreadModeRawMutex, Option<embassy_stm32::rng::Rng<'_, RNG>>> =
     Mutex::new(None);
@@ -41,13 +43,29 @@ const HEAP_SIZE: usize = 1024;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 static START: spin::Once = spin::Once::new();
-
+static START2: spin::Once = spin::Once::new();
 pub fn init_heap() {
     START.call_once(|| {
         static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
         unsafe {
             HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE);
         }
+    });
+}
+const TIME_BETWEEN_1900_1970: u64 = 2_208_988_800;
+
+static ELAPSED_SINCE_1900: Mutex<ThreadModeRawMutex, Option<u64>> = Mutex::new(None);
+
+pub fn init_ntp_call(stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>) {
+    info!("START2.call_once");
+    START2.call_once(|| {
+        info!("BEFORE START2");
+        embassy_futures::block_on(async {
+            ELAPSED_SINCE_1900
+                .lock()
+                .await
+                .replace(get_time_from_ntp_server(stack).await);
+        })
     });
 }
 
@@ -108,7 +126,8 @@ pub async fn network_task_init(
     //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
-
+    info!("CALLING INIT NTP STACK");
+    init_ntp_call(stack);
     info!("Network task initialized");
     stack
 }

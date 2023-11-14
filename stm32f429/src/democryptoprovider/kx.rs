@@ -36,7 +36,7 @@ pub const ALL_KX_GROUPS: &[&dyn SupportedKxGroup] = &[&X25519 as &dyn SupportedK
 pub struct X25519;
 
 impl crypto::SupportedKxGroup for X25519 {
-    fn start(&self) -> Result<Box<dyn crypto::ActiveKeyExchange>, rustls::crypto::GetRandomFailed> {
+    fn start(&self) -> Result<Box<dyn crypto::ActiveKeyExchange>, rustls::Error> {
         let priv_key = embassy_futures::block_on(async {
             let mut board_rng = crate::RNG_MUTEX.lock().await;
             let rng = board_rng.as_mut().unwrap();

@@ -35,8 +35,6 @@ async fn main(spawner: Spawner) -> ! {
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
 
-    info!("Hello World!");
-
     // Generate random seed.
     let mut rng = Rng::new(p.RNG, Irqs);
     let mut seed = [0; 8];

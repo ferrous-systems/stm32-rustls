@@ -15,10 +15,9 @@ use embassy_stm32::Config;
 use embassy_stm32::time::mhz;
 use embassy_time::{Duration, Instant, Timer};
 
-use stm32f429::{self as _, Board};
-use stm32f429::{
-    get_time_from_ntp_server, init_heap, network_task_init, now_plus_elapsed_since_1900,
-};
+use stm32f429::demotimeprovider::DemoTimeProvider;
+use stm32f429::{self as _, board::Board};
+use stm32f429::{init_call_to_ntp_server, init_heap, network_task_init};
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -30,26 +29,25 @@ async fn main(spawner: Spawner) -> ! {
 
     let stack = network_task_init(spawner, board).await;
 
-    // Then we can use it!
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
-    // send a hello message
     init_heap();
     let msg = vec![104, 101, 108, 108, 111];
+
+    init_call_to_ntp_server(stack).await;
+
+    let time_provider = DemoTimeProvider::new();
+
     let now = Instant::now();
-    // make get_current_time instead that wraps
-    let transmit_seconds = get_time_from_ntp_server(stack).await;
 
     loop {
-        info!(
-            "Elapsed time with NTP info{:?}",
-            Debug2Format(&(now_plus_elapsed_since_1900(transmit_seconds, now.elapsed().as_secs())))
-        );
+        let seconds = time_provider.get_current_time(now.elapsed().as_secs());
+        warn!("Elapsed time: {:?}", Debug2Format(&(seconds.unwrap())));
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));
         let add = "192.168.50.67".parse::<Ipv4Address>().unwrap();
-        info!("Listening on TCP:1234...");
+
         if let Err(e) = socket.connect((add, 1234)).await {
             warn!("connect error: {:?}", e);
             Timer::after(Duration::from_secs(3)).await;

@@ -13,11 +13,11 @@ use embassy_net::Ipv4Address;
 use embassy_stm32::Config;
 
 use embassy_stm32::time::mhz;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 
 use stm32f429::demotimeprovider::DemoTimeProvider;
 use stm32f429::{self as _, board::Board};
-use stm32f429::{init_heap, network_task_init};
+use stm32f429::{init_call_to_ntp_server, init_heap, network_task_init};
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -37,12 +37,16 @@ async fn main(spawner: Spawner) -> ! {
     init_heap();
     let msg = vec![104, 101, 108, 108, 111];
 
+    info!("CALLING INIT NTP STACK");
+    init_call_to_ntp_server(stack).await;
+
     let time_provider = DemoTimeProvider::new();
 
     // make get_current_time instead that wraps
-    let seconds = time_provider.get_current_time();
+    let now = Instant::now();
 
     loop {
+        let seconds = time_provider.get_current_time(now.elapsed().as_secs());
         warn!(
             "Elapsed time with NTP info{:?}",
             Debug2Format(&(seconds.unwrap()))

@@ -7,7 +7,7 @@ use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint, Ipv4Address, Stack};
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
-use embassy_time::{Duration, Instant};
+use embassy_time::Duration;
 use rustls_pki_types::UnixTime;
 
 pub struct DemoTimeProvider;
@@ -16,15 +16,14 @@ impl DemoTimeProvider {
     pub fn new() -> Self {
         Self
     }
-    pub fn get_current_time(&self) -> Result<UnixTime, ()> {
-        let now = Instant::now().elapsed().as_secs();
-        embassy_futures::block_on(async {
-            let binding = ELAPSED_SINCE_1900.lock().await;
-            let elapsed_since_1900 = binding.as_ref().unwrap();
-            let remove_before_1970 = elapsed_since_1900 - TIME_BETWEEN_1900_1970;
-            let total = Duration::from_secs(now + remove_before_1970).into();
-            Ok(UnixTime::since_unix_epoch(total))
-        })
+    pub fn get_current_time(&self, now: u64) -> Result<UnixTime, ()> {
+        let elapsed_since_1900 = embassy_futures::block_on(async {
+            let provisory = ELAPSED_SINCE_1900.lock().await;
+            *provisory.as_ref().unwrap()
+        });
+        let remove_before_1970 = elapsed_since_1900 - TIME_BETWEEN_1900_1970;
+        let total = Duration::from_secs(now + remove_before_1970).into();
+        Ok(UnixTime::since_unix_epoch(total))
     }
 }
 pub async fn get_time_from_ntp_server(
@@ -66,6 +65,8 @@ pub async fn get_time_from_ntp_server(
     info!("after sock.send_to");
 
     let mut response = buf;
+    info!("before sock.recv_from");
+
     let (read, peer) = sock.recv_from(&mut response).await.unwrap();
     info!("after sock.recv_from");
 

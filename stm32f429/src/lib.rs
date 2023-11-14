@@ -14,7 +14,7 @@ use static_cell::make_static;
 
 use core::mem::MaybeUninit;
 use cortex_m_semihosting::debug;
-use defmt::{info, unwrap, Debug2Format};
+use defmt::{info, unwrap};
 use embassy_executor::Spawner;
 use embassy_net::{Stack, StackResources};
 use embassy_stm32::{
@@ -43,7 +43,6 @@ const HEAP_SIZE: usize = 1024;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 static START: spin::Once = spin::Once::new();
-static START2: spin::Once = spin::Once::new();
 pub fn init_heap() {
     START.call_once(|| {
         static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
@@ -56,17 +55,13 @@ const TIME_BETWEEN_1900_1970: u64 = 2_208_988_800;
 
 static ELAPSED_SINCE_1900: Mutex<ThreadModeRawMutex, Option<u64>> = Mutex::new(None);
 
-pub fn init_ntp_call(stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>) {
+pub async fn init_call_to_ntp_server(stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>) {
     info!("START2.call_once");
-    START2.call_once(|| {
-        info!("BEFORE START2");
-        embassy_futures::block_on(async {
-            ELAPSED_SINCE_1900
-                .lock()
-                .await
-                .replace(get_time_from_ntp_server(stack).await);
-        })
-    });
+    //let ntp_time = embassy_futures::block_on(get_time_from_ntp_server(stack));
+    let ntp_time = get_time_from_ntp_server(stack).await;
+    info!("BEFORE ELAPSED_SINCE_1900.lock().await.replace(ntp_time)");
+    ELAPSED_SINCE_1900.lock().await.replace(ntp_time);
+    info!("after ELAPSED_SINCE_1900.lock().await.replace(ntp_time)");
 }
 
 pub fn exit() -> ! {
@@ -126,8 +121,7 @@ pub async fn network_task_init(
     //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
-    info!("CALLING INIT NTP STACK");
-    init_ntp_call(stack);
+
     info!("Network task initialized");
     stack
 }

@@ -2,7 +2,6 @@ use core::ops::Range;
 
 use crate::{ELAPSED_SINCE_1900, TIME_BETWEEN_1900_1970};
 use defmt::dbg;
-use defmt::info;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint, Ipv4Address, Stack};
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
@@ -29,8 +28,6 @@ impl DemoTimeProvider {
 pub async fn get_time_from_ntp_server(
     stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>,
 ) -> u64 {
-    info!("INSIDE get_time_from_ntp_server");
-
     const NTP_PACKET_SIZE: usize = 48;
     const TX_SECONDS: Range<usize> = 40..44;
 
@@ -60,20 +57,15 @@ pub async fn get_time_from_ntp_server(
     // - use NTPv3
     // - we are a client
     buf[0] = 0x1b;
-    info!("before sendto");
     sock.send_to(&buf, ntp_server).await.unwrap();
-    info!("after sock.send_to");
 
     let mut response = buf;
-    info!("before sock.recv_from");
 
     let (read, peer) = sock.recv_from(&mut response).await.unwrap();
-    info!("after sock.recv_from");
 
     dbg!(read);
     dbg!(peer);
     let transmit_seconds = u32::from_be_bytes(response[TX_SECONDS].try_into().unwrap());
 
-    info!("transmit_seconds {}", transmit_seconds);
     transmit_seconds.into()
 }

@@ -14,7 +14,7 @@ use static_cell::make_static;
 
 use core::mem::MaybeUninit;
 use cortex_m_semihosting::debug;
-use defmt::{info, unwrap};
+use defmt::unwrap;
 use embassy_executor::Spawner;
 use embassy_net::{Stack, StackResources};
 use embassy_stm32::{
@@ -55,13 +55,13 @@ const TIME_BETWEEN_1900_1970: u64 = 2_208_988_800;
 
 static ELAPSED_SINCE_1900: Mutex<ThreadModeRawMutex, Option<u64>> = Mutex::new(None);
 
+// We don't want this to be called man times but
+// START.call_once(|| {
+//    embassy_futures::block_on(async {
+// is not appropriate here!
 pub async fn init_call_to_ntp_server(stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>) {
-    info!("START2.call_once");
-    //let ntp_time = embassy_futures::block_on(get_time_from_ntp_server(stack));
     let ntp_time = get_time_from_ntp_server(stack).await;
-    info!("BEFORE ELAPSED_SINCE_1900.lock().await.replace(ntp_time)");
     ELAPSED_SINCE_1900.lock().await.replace(ntp_time);
-    info!("after ELAPSED_SINCE_1900.lock().await.replace(ntp_time)");
 }
 
 pub fn exit() -> ! {
@@ -121,7 +121,5 @@ pub async fn network_task_init(
     //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
-
-    info!("Network task initialized");
     stack
 }

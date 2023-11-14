@@ -29,28 +29,21 @@ async fn main(spawner: Spawner) -> ! {
 
     let stack = network_task_init(spawner, board).await;
 
-    // Then we can use it!
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
-    // send a hello message
     init_heap();
     let msg = vec![104, 101, 108, 108, 111];
 
-    info!("CALLING INIT NTP STACK");
     init_call_to_ntp_server(stack).await;
 
     let time_provider = DemoTimeProvider::new();
 
-    // make get_current_time instead that wraps
     let now = Instant::now();
 
     loop {
         let seconds = time_provider.get_current_time(now.elapsed().as_secs());
-        warn!(
-            "Elapsed time with NTP info{:?}",
-            Debug2Format(&(seconds.unwrap()))
-        );
+        warn!("Elapsed time: {:?}", Debug2Format(&(seconds.unwrap())));
         let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(1000)));
         let add = "192.168.50.67".parse::<Ipv4Address>().unwrap();

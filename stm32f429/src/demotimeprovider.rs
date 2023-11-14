@@ -61,13 +61,18 @@ pub async fn get_time_from_ntp_server(
     // - use NTPv3
     // - we are a client
     buf[0] = 0x1b;
-
+    info!("before sendto");
     sock.send_to(&buf, ntp_server).await.unwrap();
+    info!("after sock.send_to");
 
     let mut response = buf;
     let (read, peer) = sock.recv_from(&mut response).await.unwrap();
+    info!("after sock.recv_from");
+
     dbg!(read);
     dbg!(peer);
     let transmit_seconds = u32::from_be_bytes(response[TX_SECONDS].try_into().unwrap());
+
+    info!("transmit_seconds {}", transmit_seconds);
     transmit_seconds.into()
 }

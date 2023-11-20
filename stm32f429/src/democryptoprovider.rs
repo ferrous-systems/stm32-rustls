@@ -24,7 +24,7 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
         aead_alg: &aead::Chacha20Poly1305,
     });
 #[derive(Debug)]
-struct DemoCryptoProvider;
+pub struct DemoCryptoProvider;
 impl CryptoProvider for DemoCryptoProvider {
     fn fill_random(&self, bytes: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
         // This is a non async task so I need embassy_futures

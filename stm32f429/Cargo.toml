@@ -1,11 +1,10 @@
 [package]
 edition = "2021"
-name = "stm32f429"
-version = "0.1.0"
+name = "stm32-rustls"
+version = "0.0.0"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-# Change stm32f429zi to your chip name, if necessary.
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a46682f76dcc4d75f9ba4ce80dfb4193", features = [
     "nightly",
     "unstable-traits",
@@ -84,6 +83,7 @@ hmac = "0.12.1"
 x25519-dalek = { version = "2.0.0", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 rustls-webpki = { version = "=0.102.0-alpha.6", default-features = false }
+webpki-roots = { git = "https://github.com/rustls/webpki-roots"}
 [profile.release]
 debug = 2
 opt-level = "z"

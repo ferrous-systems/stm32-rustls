@@ -83,6 +83,7 @@ chacha20poly1305 = { version = "0.10.1", default-features = false, features = [
 hmac = "0.12.1"
 x25519-dalek = { version = "2.0.0", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
+rustls-webpki = { version = "=0.102.0-alpha.6", default-features = false }
 [profile.release]
 debug = 2
 opt-level = "z"

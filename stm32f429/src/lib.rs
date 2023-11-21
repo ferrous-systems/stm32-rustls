@@ -8,8 +8,9 @@ pub mod demotimeprovider;
 
 extern crate alloc;
 
+use alloc::sync::Arc;
 use board::Board;
-
+mod verify;
 use static_cell::make_static;
 
 use core::mem::MaybeUninit;
@@ -122,4 +123,13 @@ pub async fn network_task_init(
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
     stack
+}
+
+pub fn certificate_verifier(
+    roots: rustls::RootCertStore,
+) -> Arc<dyn rustls::client::danger::ServerCertVerifier> {
+    rustls::client::WebPkiServerVerifier::builder(roots.into())
+        .with_signature_verification_algorithms(verify::ALGORITHMS)
+        .build()
+        .unwrap()
 }

@@ -8,7 +8,7 @@ use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant};
-use rustls::time_provider::{TimeProvider, GetCurrentTime};
+use rustls::time_provider::{GetCurrentTime, TimeProvider};
 use rustls_pki_types::UnixTime;
 
 pub static SINCE_START: Mutex<ThreadModeRawMutex, Option<Instant>> = Mutex::new(None);
@@ -48,9 +48,9 @@ pub async fn get_time_from_ntp_server(
     };
 
     let mut rx_meta = [PacketMetadata::EMPTY; 16];
-    let mut rx_buffer = [0; 4096];
+    let mut rx_buffer = [0; 6400];
     let mut tx_meta = [PacketMetadata::EMPTY; 16];
-    let mut tx_buffer = [0; 4096];
+    let mut tx_buffer = [0; 6400];
     let mut buf = [0u8; NTP_PACKET_SIZE];
 
     let mut sock = UdpSocket::new(

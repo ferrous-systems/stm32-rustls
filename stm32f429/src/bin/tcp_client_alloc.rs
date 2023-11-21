@@ -29,8 +29,6 @@ use stm32_rustls::{demotimeprovider, init_call_to_ntp_server, init_heap, network
 use {defmt_rtt as _, panic_probe as _};
 
 const SERVER_NAME: &str = "www.rust-lang.org";
-const PORT: u16 = 443;
-const MAX_ITERATIONS: usize = 25;
 
 pub static CRYPTO_PROVIDER: &'static dyn rustls::crypto::CryptoProvider = &DemoCryptoProvider;
 
@@ -43,8 +41,8 @@ async fn main(spawner: Spawner) -> ! {
 
     let stack = network_task_init(spawner, board).await;
 
-    let mut rx_buffer = [0; 4096];
-    let mut tx_buffer = [0; 4096];
+    let mut rx_buffer = [0; 6400];
+    let mut tx_buffer = [0; 6400];
 
     init_heap();
 
@@ -177,7 +175,7 @@ async fn main(spawner: Spawner) -> ! {
     }
 }
 
-fn http_request(server_name: &str) -> String<64> {
+fn http_request(server_name: &str) -> String<6400> {
     const HTTP_SEPARATOR: &str = "\r\n";
 
     let lines = [

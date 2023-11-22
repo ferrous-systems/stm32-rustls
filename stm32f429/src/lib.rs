@@ -40,7 +40,7 @@ bind_interrupts!(struct Irqs {
     HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
-const HEAP_SIZE: usize = 1024;
+const HEAP_SIZE: usize = 1024 + 5640 + 1024 + 2048 + 1245 + 11280;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 static START: spin::Once = spin::Once::new();

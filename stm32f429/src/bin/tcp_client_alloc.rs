@@ -41,8 +41,8 @@ async fn main(spawner: Spawner) -> ! {
 
     let stack = network_task_init(spawner, board).await;
 
-    let mut rx_buffer = [0; 6400];
-    let mut tx_buffer = [0; 6400];
+    let mut rx_buffer = [0; 1024];
+    let mut tx_buffer = [0; 1024];
 
     init_heap();
 

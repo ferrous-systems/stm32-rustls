@@ -70,10 +70,10 @@ pub async fn get_time_from_ntp_server(
 
     let mut response = buf;
 
-    let (read, peer) = sock.recv_from(&mut response).await.unwrap();
+    let (read, peer_ntp) = sock.recv_from(&mut response).await.unwrap();
 
     dbg!(read);
-    dbg!(peer);
+    dbg!(peer_ntp);
     let transmit_seconds = u32::from_be_bytes(response[TX_SECONDS].try_into().unwrap());
 
     transmit_seconds.into()

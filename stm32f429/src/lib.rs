@@ -8,14 +8,15 @@ pub mod demotimeprovider;
 mod verify;
 extern crate alloc;
 
-use alloc::sync::Arc;
+use alloc::{borrow::Cow, sync::Arc};
 use board::Board;
 
+use heapless::String;
 use static_cell::make_static;
 
 use core::mem::MaybeUninit;
 use cortex_m_semihosting::debug;
-use defmt::unwrap;
+use defmt::{unwrap, Format};
 use embassy_executor::Spawner;
 use embassy_net::{Stack, StackResources};
 use embassy_stm32::{
@@ -129,4 +130,24 @@ pub async fn network_task_init(
     unwrap!(spawner.spawn(net_task(&stack)));
     stack.wait_config_up().await;
     stack
+}
+
+pub fn http_request(server_name: &str) -> String<64> {
+    const HTTP_SEPARATOR: &str = "\r\n";
+
+    let lines = [
+        Cow::Borrowed("GET / HTTP/1.1"),
+        alloc::format!("Host: {server_name}").into(),
+        "Connection: close".into(),
+        "Accept-Encoding: identity".into(),
+        "".into(), // body
+    ];
+
+    let mut req = String::new();
+    for line in lines {
+        let _ = req.push_str(&line);
+        let _ = req.push_str(HTTP_SEPARATOR);
+    }
+
+    req
 }

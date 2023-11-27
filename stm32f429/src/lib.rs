@@ -90,7 +90,7 @@ pub async fn network_task_init(
     RNG_MUTEX.lock().await.replace(board.rng);
 
     let mac_addr = [6, 5, 4, 3, 2, 1];
-    dbg!("Mac address");
+
     let device = Ethernet::new(
         make_static!(PacketQueue::<16, 16>::new()),
         board.peri,
@@ -121,9 +121,7 @@ pub async fn network_task_init(
 
     //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
-    dbg!("WAITING FOR THE CONFIG TO GO UP IN LIB");
     stack.wait_config_up().await;
-    dbg!("Is link up {}", stack.is_link_up());
     stack
 }
 

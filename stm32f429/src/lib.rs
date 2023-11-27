@@ -5,9 +5,10 @@
 pub mod board;
 pub mod democryptoprovider;
 pub mod demotimeprovider;
-
+mod verify;
 extern crate alloc;
 
+use alloc::sync::Arc;
 use board::Board;
 
 use static_cell::make_static;
@@ -39,7 +40,7 @@ bind_interrupts!(struct Irqs {
     HASH_RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
-const HEAP_SIZE: usize = 1024;
+const HEAP_SIZE: usize = 1024 + 5840 + 1024 + 2048 + 1245 + 11680;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 static START: spin::Once = spin::Once::new();
@@ -54,7 +55,6 @@ pub fn init_heap() {
 const TIME_BETWEEN_1900_1970: u64 = 2_208_988_800;
 
 static ELAPSED_SINCE_1900: Mutex<ThreadModeRawMutex, Option<u64>> = Mutex::new(None);
-
 // We don't want this to be called man times but
 // START.call_once(|| {
 //    embassy_futures::block_on(async {
@@ -63,7 +63,14 @@ pub async fn init_call_to_ntp_server(stack: &'static Stack<Ethernet<'static, ETH
     let ntp_time = get_time_from_ntp_server(stack).await;
     ELAPSED_SINCE_1900.lock().await.replace(ntp_time);
 }
-
+pub fn certificate_verifier(
+    roots: rustls::RootCertStore,
+) -> Arc<dyn rustls::client::danger::ServerCertVerifier> {
+    rustls::client::WebPkiServerVerifier::builder(roots.into())
+        .with_signature_verification_algorithms(verify::ALGORITHMS)
+        .build()
+        .unwrap()
+}
 pub fn exit() -> ! {
     loop {
         debug::exit(debug::EXIT_SUCCESS);

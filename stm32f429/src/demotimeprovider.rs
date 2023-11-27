@@ -6,25 +6,34 @@ use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint, Ipv4Address, Stack};
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::ETH;
-use embassy_time::Duration;
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, mutex::Mutex};
+
+use embassy_time::{Duration, Instant};
+use rustls::time_provider::{GetCurrentTime, TimeProvider};
 use rustls_pki_types::UnixTime;
 
 pub struct DemoTimeProvider;
+pub static SINCE_START: Mutex<ThreadModeRawMutex, Option<Instant>> = Mutex::new(None);
 
-impl DemoTimeProvider {
-    pub fn new() -> Self {
-        Self
-    }
-    pub fn get_current_time(&self, now: u64) -> Result<UnixTime, ()> {
+pub fn time_provider() -> TimeProvider {
+    TimeProvider::new(DemoTimeProvider)
+}
+impl GetCurrentTime for DemoTimeProvider {
+    fn get_current_time(&self) -> Result<UnixTime, ()> {
         let elapsed_since_1900 = embassy_futures::block_on(async {
             let provisory = ELAPSED_SINCE_1900.lock().await;
             *provisory.as_ref().unwrap()
+        });
+        let now = embassy_futures::block_on(async {
+            let provisory = SINCE_START.lock().await;
+            provisory.unwrap().as_secs()
         });
         let remove_before_1970 = elapsed_since_1900 - TIME_BETWEEN_1900_1970;
         let total = Duration::from_secs(now + remove_before_1970).into();
         Ok(UnixTime::since_unix_epoch(total))
     }
 }
+
 pub async fn get_time_from_ntp_server(
     stack: &'static Stack<Ethernet<'static, ETH, GenericSMI>>,
 ) -> u64 {

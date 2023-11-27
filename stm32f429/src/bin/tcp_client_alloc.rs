@@ -44,9 +44,11 @@ async fn main(spawner: Spawner) -> ! {
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
     let board = Board::new(p);
-    dbg!("before stack");
+    warn!("before stack");
     let stack = network_task_init(spawner, board).await;
-    dbg!("after stack");
+    warn!("after stack");
+    stack.wait_config_up().await;
+
     let mut rx_buffer = [0; 1024];
     let mut tx_buffer = [0; 1024];
 
@@ -82,26 +84,12 @@ async fn main(spawner: Spawner) -> ! {
     let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
     socket.set_timeout(Some(Duration::from_secs(1)));
 
-    // just blocks if done here
-    // dig +short rust-lang.org
-    // let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
-
-    // let connection_result = socket.connect(remote_endpoint).await;
-
-    // match connection_result {
-    //     Ok(_) => info!("connection worked"),
-    //     Err(e) => info!("connection error {}", &e),
-    // }
-
     //TLS starts here
     let mut conn = LlClientConnection::new(
         Arc::new(client_config),
         rustls::ServerName::DnsName(DnsName::try_from(SERVER_NAME.to_string()).unwrap()),
     )
     .unwrap();
-    let request = http_request(SERVER_NAME);
-    dbg!("Going to log request");
-    dbg!(&request);
 
     let mut incoming_tls: [u8; 16384] = [0; 16 * 1024];
     let mut incoming_used = 0;
@@ -110,58 +98,20 @@ async fn main(spawner: Spawner) -> ! {
     let mut outgoing_used = 0;
     let mut open_connection = true;
 
+    // Gives invalid state if connection initialised here!
+    let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
+    let connection_result = socket.connect(remote_endpoint).await;
+
+    match connection_result {
+        Ok(_) => info!("connection worked",),
+        Err(e) => info!("connection error {}", &e),
+    }
+
     loop {
         while open_connection {
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
-
-            // Gives invalid state if connection initialised here!
-            let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
-            // let connection_result = socket.connect(remote_endpoint).await;
-
-            // match connection_result {
-            //     Ok(_) => info!("connection worked"),
-            //     Err(e) => info!("connection error {}", &e),
-            // }
-
-            match state {
-                LlState::MustEncodeTlsData(mut state) => {
-                    match socket.connect(remote_endpoint).await {
-                        Ok(_) => {
-                            let written = match state.encode(&mut outgoing_tls[outgoing_used..]) {
-                                Ok(written) => written,
-                                // encode error or insufficiant size
-                                Err(e) => {
-                                    warn!("error on first state: {}", Debug2Format(&e));
-                                    0
-                                }
-                            };
-                            outgoing_used += written;
-                        }
-                        Err(e) => warn!("error on first state: {}", e),
-                    }
-                }
-                LlState::MustTransmitTlsData(mut state) => {
-                    match socket.connect(remote_endpoint).await {
-                        Ok(_) => {
-                            socket.write(&outgoing_tls[..outgoing_used]);
-                            outgoing_used = 0;
-                            state.done();
-                            info!("the correct 2nd state must transmit");
-                        }
-                        Err(e) => warn!("error on second state: {}", e),
-                    }
-                }
-                LlState::MustEncodeTlsData(mut state) => {
-                    info!("must encode TLS data, the correct state");
-                }
-
-                LlState::NeedsMoreTlsData { num_bytes } => {
-                    info!("Needs more TLS data");
-                }
-                _ => info!("{}", Debug2Format(&state)),
-            }
         }
     }
 }

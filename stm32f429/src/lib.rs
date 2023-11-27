@@ -15,7 +15,7 @@ use static_cell::make_static;
 
 use core::mem::MaybeUninit;
 use cortex_m_semihosting::debug;
-use defmt::{dbg, unwrap, Debug2Format};
+use defmt::{dbg, info, unwrap, warn, Debug2Format};
 use embassy_executor::Spawner;
 use embassy_net::{Stack, StackResources};
 use embassy_stm32::{
@@ -121,7 +121,8 @@ pub async fn network_task_init(
 
     //Launch network task
     unwrap!(spawner.spawn(net_task(&stack)));
-    stack.wait_config_up().await;
+
+    info!("stack will be returned");
     stack
 }
 

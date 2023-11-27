@@ -51,7 +51,7 @@ unsafe fn HardFault(_frame: &cortex_m_rt::ExceptionFrame) -> ! {
     }
 }
 
-const HEAP_SIZE: usize = 1024;
+const HEAP_SIZE: usize = 2048;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 static START: spin::Once = spin::Once::new();

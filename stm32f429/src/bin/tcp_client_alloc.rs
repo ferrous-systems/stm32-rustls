@@ -4,6 +4,9 @@
 
 extern crate alloc;
 
+use core::f32::consts::E;
+use core::str::FromStr;
+
 use alloc::borrow::Cow;
 use alloc::string::ToString;
 use alloc::sync::Arc;
@@ -12,9 +15,11 @@ use alloc::{format, vec};
 
 use defmt::{dbg, info, warn, Debug2Format, Format};
 use embassy_executor::Spawner;
+use embassy_net::{dns, Ipv4Address};
 use embassy_stm32::time::mhz;
 use embassy_stm32::Config;
 use embassy_time::{Duration, Instant, Timer};
+use futures::TryFutureExt;
 use heapless::String;
 use rustls::client::{ClientConnectionData, InvalidDnsNameError, LlClientConnection};
 use rustls::server::danger::DnsName;
@@ -28,8 +33,9 @@ use stm32_rustls::{self as _, board::Board};
 use stm32_rustls::{demotimeprovider, init_call_to_ntp_server, init_heap, network_task_init};
 use {defmt_rtt as _, panic_probe as _};
 
+// url scheme = https://
 const SERVER_NAME: &str = "www.rust-lang.org";
-
+const PORT: u16 = 443;
 pub static CRYPTO_PROVIDER: &'static dyn rustls::crypto::CryptoProvider = &DemoCryptoProvider;
 
 #[embassy_executor::main]
@@ -38,9 +44,9 @@ async fn main(spawner: Spawner) -> ! {
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
     let board = Board::new(p);
-
+    dbg!("before stack");
     let stack = network_task_init(spawner, board).await;
-
+    dbg!("after stack");
     let mut rx_buffer = [0; 1024];
     let mut tx_buffer = [0; 1024];
 
@@ -74,108 +80,93 @@ async fn main(spawner: Spawner) -> ! {
     client_config.time_provider = demotimeprovider::time_provider();
 
     let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-    socket.set_timeout(Some(Duration::from_secs(1000)));
+    socket.set_timeout(Some(Duration::from_secs(1)));
 
+    // got this from dig +short rust-lang.org
+    let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
+
+    let connection_result = socket.connect(remote_endpoint).await;
+
+    match connection_result {
+        Ok(_) => info!("connection worked"),
+        Err(e) => info!("connection error {}", &e),
+    }
+
+    //TLS starts here
     let mut conn = LlClientConnection::new(
         Arc::new(client_config),
         rustls::ServerName::DnsName(DnsName::try_from(SERVER_NAME.to_string()).unwrap()),
     )
     .unwrap();
     let request = http_request(SERVER_NAME);
-
-    let mut incoming_tls = [0; 16 * 1024];
+    dbg!("Going to log request");
+    dbg!(request);
+    let mut incoming_tls: [u8; 16384] = [0; 16 * 1024];
     let mut incoming_used = 0;
 
     let mut outgoing_tls: Vec<u8> = vec![];
     let mut outgoing_used = 0;
     let mut open_connection = true;
+    let mut i = 150;
+    loop {}
+    // 'externe: loop {
+    //     while open_connection {
+    //         let LlStatus { discard, state } = conn
+    //             .process_tls_records(&mut incoming_tls[..incoming_used])
+    //             .unwrap();
 
-    loop {
-        while open_connection {
-            let LlStatus { discard, state } = conn
-                .process_tls_records(&mut incoming_tls[..incoming_used])
-                .unwrap();
-            //     match state {
-            //         // logic similar to the one presented in the 'handling InsufficientSizeError' section is
-            //         // used in these states
-            //         LlState::MustEncodeTlsData(mut state) => {
-            //             let written = match state.encode(&mut outgoing_tls[outgoing_used..]) {
-            //                 Ok(written) => written,
-            //                 Err(EncodeError::InsufficientSize(InsufficientSizeError {
-            //                     required_size,
-            //                 })) => {
-            //                     let new_len = outgoing_used + required_size;
-            //                     outgoing_tls.resize(new_len, 0);
-            //                     warn!("resized `outgoing_tls` buffer to {}B", new_len);
+    //         info!("{}", Debug2Format(&state));
+    //         match state {
+    //             LlState::MustEncodeTlsData(mut state) => {
+    //                 let written = match state.encode(&mut outgoing_tls[outgoing_used..]) {
+    //                     Ok(written) => {
+    //                         info!("WRITTEN {}", Debug2Format(&written));
+    //                         written
+    //                     }
+    //                     Err(e) => {
+    //                         info!("ERROR {}", Debug2Format(&e));
+    //                         0
+    //                     }
+    //                 };
+    //                 i -= 1;
+    //             }
+    //             LlState::TrafficTransit(mut traffic_transit) => {
+    //                 // post-handshake logic
+    //                 let request = request.as_bytes();
+    //                 let len = traffic_transit
+    //                     .encrypt(request, outgoing_tls.as_mut_slice())
+    //                     .unwrap();
+    //                 info!("Going to write to socket!");
+    //                 // let _ = socket.write(&outgoing_tls[..len]).await;
 
-            //                     // don't forget to encrypt the handshake record after resizing!
-            //                     state
-            //                         .encode(&mut outgoing_tls[outgoing_used..])
-            //                         .expect("should not fail this time")
-            //                 }
-            //                 Err(err) => 0,
-            //             };
-            //             outgoing_used += written;
-            //         }
-            //         LlState::MustTransmitTlsData(state) => {
-            //             socket.write(&outgoing_tls[..outgoing_used]).await;
+    //                 // let read = socket
+    //                 //     .read(&mut incoming_tls[incoming_used..])
+    //                 //     .await
+    //                 //     .unwrap();
+    //                 // incoming_used += read;
+    //             }
+    //             LlState::NeedsMoreTlsData { num_bytes } => {
+    //                 info!("I NEED MORE TLS DATA");
+    //                 // let read = socket.read(&mut incoming_tls[incoming_used..]).await;
+    //                 // info!("ERROR {}", Debug2Format(&read));
 
-            //             outgoing_used = 0;
-
-            //             state.done();
-            //         }
-
-            //         LlState::NeedsMoreTlsData { .. } => {
-            //             // NOTE real code needs to handle the scenario where `incoming_tls` is not big enough
-            //             let read = socket
-            //                 .read(&mut incoming_tls[incoming_used..])
-            //                 .await
-            //                 .unwrap();
-            //             incoming_used += read;
-            //         }
-
-            //         LlState::AppDataAvailable(mut records) => {
-            //             while let Some(result) = records.next_record() {
-            //                 let AppDataRecord { payload, .. } = result.unwrap();
-            //                 // needs to be converted from utf8I s
-            //                 info!("response:\n{:?}", Debug2Format(payload));
-            //             }
-            //         }
-
-            //         LlState::TrafficTransit(mut traffic_transit) => {
-            //             // post-handshake logic
-            //             let request = request.as_bytes();
-            //             let len = traffic_transit
-            //                 .encrypt(request, outgoing_tls.as_mut_slice())
-            //                 .unwrap();
-            //             socket.write(&outgoing_tls[..len]).await.unwrap();
-
-            //             let read = socket
-            //                 .read(&mut incoming_tls[incoming_used..])
-            //                 .await
-            //                 .unwrap();
-            //             incoming_used += read;
-            //         }
-
-            //         LlState::ConnectionClosed => open_connection = false,
-            //         _ => {}
-            //     }
-
-            //     // discard TLS records
-            //     if discard != 0 {
-            //         assert!(discard <= incoming_used);
-
-            //         incoming_tls.copy_within(discard..incoming_used, 0);
-            //         incoming_used -= discard;
-            //     }
-            // }
-            // ()
-            info!("{}", Debug2Format(&state))
-        }
-    }
+    //                 // match read {
+    //                 //     Ok(read) => incoming_used += read,
+    //                 //     Err(e) => info!("Error on NeedsMoreTlsData"),
+    //                 // }
+    //                 i -= 1;
+    //             }
+    //             _ => info!("{}", Debug2Format(&state)),
+    //         }
+    //         if i <= 0 {
+    //             break 'externe;
+    //         }
+    //     }
+    // }
+    // stm32_rustls::exit();
 }
 
-fn http_request(server_name: &str) -> String<6400> {
+fn http_request(server_name: &str) -> String<1024> {
     const HTTP_SEPARATOR: &str = "\r\n";
 
     let lines = [

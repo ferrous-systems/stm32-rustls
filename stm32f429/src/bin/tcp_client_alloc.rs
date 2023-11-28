@@ -58,7 +58,7 @@ async fn main(spawner: Spawner) -> ! {
     warn!("after stack");
 
     // Done sequentially now
-    //Launch network task
+    // Launch network task
     unwrap!(spawner.spawn(net_task(stack)));
     // why does this work, is it doing a background task out of its
     //stack.run().await;
@@ -113,19 +113,21 @@ async fn main(spawner: Spawner) -> ! {
     let mut outgoing_used = 0;
     let mut open_connection = true;
 
-    // let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
-    // let connection_result = socket.connect(remote_endpoint).await;
+    let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
+    let connection_result = socket.connect(remote_endpoint).await;
 
-    // match connection_result {
-    //     Ok(_) => info!("connection worked",),
-    //     Err(e) => info!("connection error {}", &e),
-    // }
+    match connection_result {
+        Ok(_) => info!("connection worked",),
+        Err(e) => info!("connection error {}", &e),
+    }
 
     loop {
         while open_connection {
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
+
+            dbg!(Debug2Format(&state));
         }
     }
 }

@@ -13,9 +13,11 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use defmt::{dbg, info, warn, Debug2Format, Format};
+use defmt::{dbg, info, unwrap, warn, Debug2Format, Format};
 use embassy_executor::Spawner;
-use embassy_net::{dns, Ipv4Address};
+use embassy_net::{dns, Ipv4Address, Stack};
+use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
+use embassy_stm32::peripherals::{self, ETH, RNG};
 use embassy_stm32::time::mhz;
 use embassy_stm32::Config;
 use embassy_time::{Duration, Instant, Timer};
@@ -27,6 +29,7 @@ use rustls::version::{TLS12, TLS13};
 use rustls::{AppDataRecord, ClientConfig, InsufficientSizeError, LlState, RootCertStore};
 use rustls::{EncodeError, LlStatus};
 use rustls_pemfile::Item;
+
 use stm32_rustls::democryptoprovider::DemoCryptoProvider;
 use stm32_rustls::demotimeprovider::SINCE_START;
 use stm32_rustls::{self as _, board::Board};
@@ -37,6 +40,12 @@ use {defmt_rtt as _, panic_probe as _};
 const SERVER_NAME: &str = "www.rust-lang.org";
 const PORT: u16 = 443;
 pub static CRYPTO_PROVIDER: &'static dyn rustls::crypto::CryptoProvider = &DemoCryptoProvider;
+type Device = Ethernet<'static, ETH, GenericSMI>;
+
+#[embassy_executor::task]
+async fn net_task(stack: &'static Stack<Device>) -> ! {
+    stack.run().await
+}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) -> ! {
@@ -47,6 +56,12 @@ async fn main(spawner: Spawner) -> ! {
     warn!("before stack");
     let stack = network_task_init(spawner, board).await;
     warn!("after stack");
+
+    // Done sequentially now
+    //Launch network task
+    unwrap!(spawner.spawn(net_task(stack)));
+    // why does this work, is it doing a background task out of its
+    //stack.run().await;
     stack.wait_config_up().await;
 
     let mut rx_buffer = [0; 1024];
@@ -98,14 +113,13 @@ async fn main(spawner: Spawner) -> ! {
     let mut outgoing_used = 0;
     let mut open_connection = true;
 
-    // Gives invalid state if connection initialised here!
-    let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
-    let connection_result = socket.connect(remote_endpoint).await;
+    // let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
+    // let connection_result = socket.connect(remote_endpoint).await;
 
-    match connection_result {
-        Ok(_) => info!("connection worked",),
-        Err(e) => info!("connection error {}", &e),
-    }
+    // match connection_result {
+    //     Ok(_) => info!("connection worked",),
+    //     Err(e) => info!("connection error {}", &e),
+    // }
 
     loop {
         while open_connection {

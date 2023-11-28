@@ -1,7 +1,7 @@
 #![no_main]
 #![no_std]
 #![feature(type_alias_impl_trait)]
-
+#[allow(unused_imports)]
 pub mod board;
 pub mod democryptoprovider;
 pub mod demotimeprovider;
@@ -73,11 +73,6 @@ pub fn exit() -> ! {
 
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
-#[embassy_executor::task]
-async fn net_task(stack: &'static Stack<Device>) -> ! {
-    stack.run().await
-}
-
 pub async fn network_task_init(
     spawner: Spawner,
     mut board: Board,
@@ -119,10 +114,7 @@ pub async fn network_task_init(
         seed
     ));
 
-    //Launch network task
-    unwrap!(spawner.spawn(net_task(&stack)));
-
-    info!("stack will be returned");
+    info!("STACK IS GOING TO BE RETURNED");
     stack
 }
 

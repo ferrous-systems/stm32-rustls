@@ -125,7 +125,7 @@ async fn main(spawner: Spawner) -> ! {
     }
 
     let _ = process_state(
-        //&mut socket,
+        &mut socket,
         conn,
         incoming_tls,
         incoming_used,
@@ -134,9 +134,8 @@ async fn main(spawner: Spawner) -> ! {
     );
     loop {}
 }
-
-async fn process_state(
-    //socket: &mut TcpSocket<'_>,
+fn process_state(
+    socket: &mut TcpSocket<'_>,
     mut conn: LlClientConnection,
     mut incoming_tls: [u8; 16384],
     mut incoming_used: usize,
@@ -173,16 +172,18 @@ async fn process_state(
                     // Should be always Ok(written)
                     outgoing_used += written.unwrap();
                 }
-                // LlState::MustTransmitTlsData(state) => {
-                //     socket
-                //         .write_all(&outgoing_tls[..outgoing_used])
-                //         .await
-                //         .unwrap();
+                LlState::MustTransmitTlsData(state) => {
+                    embassy_futures::block_on(async {
+                        socket
+                            .write_all(&outgoing_tls[..outgoing_used])
+                            .await
+                            .unwrap();
+                    });
 
-                //     outgoing_used = 0;
+                    outgoing_used = 0;
 
-                //     state.done();
-                // }
+                    state.done();
+                }
                 _ => {
                     dbg!(Debug2Format(&state));
                     return Ok(());

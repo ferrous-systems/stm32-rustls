@@ -15,13 +15,15 @@ use alloc::{format, vec};
 
 use defmt::{dbg, info, unwrap, warn, Debug2Format, Format};
 use embassy_executor::Spawner;
+use embassy_net::tcp::TcpSocket;
 use embassy_net::{dns, Ipv4Address, Stack};
 use embassy_stm32::eth::{generic_smi::GenericSMI, Ethernet};
 use embassy_stm32::peripherals::{self, ETH, RNG};
 use embassy_stm32::time::mhz;
 use embassy_stm32::Config;
 use embassy_time::{Duration, Instant, Timer};
-use futures::TryFutureExt;
+use embedded_io_async::Write;
+
 use heapless::String;
 use rustls::client::{ClientConnectionData, InvalidDnsNameError, LlClientConnection};
 use rustls::server::danger::DnsName;
@@ -74,6 +76,8 @@ async fn main(spawner: Spawner) -> ! {
     let mut root_store = RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
+    // Not needed for rust-lang.org
+    // necessary for local
     let mut certfile: &[_] = include_bytes!("/home/aissata/.local/share/mkcert/rootCA.pem");
     let mut certs = vec![];
     while let Ok(Some((item, rest))) = rustls_pemfile::read_one_from_slice(certfile) {
@@ -121,6 +125,7 @@ async fn main(spawner: Spawner) -> ! {
     }
 
     let _ = process_state(
+        //&mut socket,
         conn,
         incoming_tls,
         incoming_used,
@@ -128,10 +133,10 @@ async fn main(spawner: Spawner) -> ! {
         outgoing_used,
     );
     loop {}
-    stm32_rustls::no_exit();
 }
 
-fn process_state(
+async fn process_state(
+    //socket: &mut TcpSocket<'_>,
     mut conn: LlClientConnection,
     mut incoming_tls: [u8; 16384],
     mut incoming_used: usize,
@@ -168,16 +173,26 @@ fn process_state(
                     // Should be always Ok(written)
                     outgoing_used += written.unwrap();
                 }
+                // LlState::MustTransmitTlsData(state) => {
+                //     socket
+                //         .write_all(&outgoing_tls[..outgoing_used])
+                //         .await
+                //         .unwrap();
 
+                //     outgoing_used = 0;
+
+                //     state.done();
+                // }
                 _ => {
                     dbg!(Debug2Format(&state));
                     return Ok(());
                 }
             }
             // discard TLS records
+            // discard will kick in after sending
             if discard != 0 {
                 assert!(discard <= incoming_used);
-
+                dbg!(discard);
                 incoming_tls.copy_within(discard..incoming_used, 0);
                 incoming_used -= discard;
             }

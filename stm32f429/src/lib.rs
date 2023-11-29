@@ -71,6 +71,9 @@ pub fn exit() -> ! {
     }
 }
 
+pub fn no_exit() -> ! {
+    loop {}
+}
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
 pub async fn network_task_init(

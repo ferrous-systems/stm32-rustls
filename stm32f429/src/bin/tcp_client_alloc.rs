@@ -111,7 +111,6 @@ async fn main(spawner: Spawner) -> ! {
 
     let mut outgoing_tls: Vec<u8> = vec![];
     let mut outgoing_used = 0;
-    let mut open_connection = true;
 
     let remote_endpoint = (Ipv4Address::new(52, 85, 242, 98), PORT);
     let connection_result = socket.connect(remote_endpoint).await;
@@ -121,14 +120,69 @@ async fn main(spawner: Spawner) -> ! {
         Err(e) => info!("connection error {}", &e),
     }
 
+    let _ = process_state(
+        conn,
+        incoming_tls,
+        incoming_used,
+        outgoing_tls,
+        outgoing_used,
+    );
+
+    stm32_rustls::no_exit();
+}
+
+fn process_state(
+    mut conn: LlClientConnection,
+    mut incoming_tls: [u8; 16384],
+    mut incoming_used: usize,
+    mut outgoing_tls: Vec<u8>,
+    mut outgoing_used: usize,
+) -> Result<(), Error> {
+    let mut open_connection = true;
+
     loop {
         while open_connection {
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
+            //dbg!(Debug2Format(&state));
+            match state {
+                LlState::MustEncodeTlsData(mut state) => {
+                    let written = match state.encode(&mut outgoing_tls[outgoing_used..]) {
+                        Ok(written) => Ok(written),
 
-            dbg!(Debug2Format(&state));
+                        Err(e) => match e {
+                            EncodeError::InsufficientSize(InsufficientSizeError {
+                                required_size,
+                            }) => {
+                                let new_len = outgoing_used + required_size;
+                                outgoing_tls.resize(new_len, 0);
+                                match state.encode(&mut outgoing_tls[outgoing_used..]) {
+                                    Ok(w) => Ok(w),
+                                    Err(e) => Err(e),
+                                }
+                            }
+                            EncodeError::AlreadyEncoded => Err(e),
+                        },
+                    };
+                    // Should be always Ok(written)
+                    outgoing_used += written.unwrap();
+                }
+
+                _ => {
+                    dbg!(Debug2Format(&state));
+                    return Ok(());
+                }
+            }
+            // discard TLS records
+            if discard != 0 {
+                assert!(discard <= incoming_used);
+
+                incoming_tls.copy_within(discard..incoming_used, 0);
+                incoming_used -= discard;
+            }
         }
+        return Ok(());
     }
 }
 
@@ -150,4 +204,9 @@ fn http_request(server_name: &str) -> String<1024> {
     }
 
     req
+}
+
+#[derive(Debug)]
+enum Error {
+    RustLsEncodeError(EncodeError),
 }

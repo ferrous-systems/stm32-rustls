@@ -127,7 +127,7 @@ async fn main(spawner: Spawner) -> ! {
         outgoing_tls,
         outgoing_used,
     );
-
+    loop {}
     stm32_rustls::no_exit();
 }
 
@@ -145,7 +145,7 @@ fn process_state(
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
-            //dbg!(Debug2Format(&state));
+            dbg!(Debug2Format(&state));
             match state {
                 LlState::MustEncodeTlsData(mut state) => {
                     let written = match state.encode(&mut outgoing_tls[outgoing_used..]) {

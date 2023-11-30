@@ -93,3 +93,5 @@ rustls-pemfile = { git = "https://github.com/rustls/pemfile", default-features =
 debug = 2
 opt-level = "z"
 #lto = true
+[package.metadata.defmt]
+log = "{timestamp} {level} {args}"

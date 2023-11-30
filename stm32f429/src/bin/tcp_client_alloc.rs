@@ -42,7 +42,7 @@ use {defmt_rtt as _, panic_probe as _};
 // url scheme = https://
 //const SERVER_NAME: &str = "rust-lang.org";
 const SERVER_NAME: &str = "rust-lang.org";
-const PORT: u16 = 443;
+const PORT: u16 = 1443;
 pub static CRYPTO_PROVIDER: &'static dyn rustls::crypto::CryptoProvider = &DemoCryptoProvider;
 type Device = Ethernet<'static, ETH, GenericSMI>;
 
@@ -103,7 +103,7 @@ async fn main(spawner: Spawner) -> ! {
     client_config.time_provider = demotimeprovider::time_provider();
 
     let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-    socket.set_timeout(Some(Duration::from_secs(1)));
+    socket.set_timeout(Some(Duration::from_secs(10)));
 
     //TLS starts here
     let mut conn = LlClientConnection::new(
@@ -118,14 +118,16 @@ async fn main(spawner: Spawner) -> ! {
     let mut outgoing_tls: Vec<u8> = vec![];
     let mut outgoing_used = 0;
 
-    let remote_endpoint = (Ipv4Address::new(52, 85, 242, 46), PORT);
+    //let remote_endpoint = (Ipv4Address::new(52, 85, 242, 46), PORT);
+    let remote_endpoint = (Ipv4Address::new(192, 168, 50, 67), PORT);
+    //let remote_endpoint = (Ipv4Address::new(127, 0, 0, 1), PORT);
     let connection_result = socket.connect(remote_endpoint).await;
 
     match connection_result {
         Ok(_) => info!("connection worked",),
         Err(e) => info!("connection error {}", &e),
     }
-    socket.set_keep_alive(Some(Duration::from_millis(50)));
+    socket.set_keep_alive(Some(Duration::from_millis(500)));
 
     let _ = process_state(
         &mut socket,
@@ -135,9 +137,18 @@ async fn main(spawner: Spawner) -> ! {
         outgoing_tls,
         outgoing_used,
     );
-    socket.set_keep_alive(Some(Duration::from_millis(50)));
+    socket.set_keep_alive(Some(Duration::from_millis(500)));
 
-    loop {}
+    loop {
+        embassy_futures::block_on(async {
+            unwrap!(spawner.spawn(wait(10)));
+        });
+    }
+}
+
+#[embassy_executor::task]
+async fn wait(time: u64) {
+    Timer::after(Duration::from_secs(time)).await;
 }
 fn process_state(
     socket: &mut TcpSocket<'_>,
@@ -148,72 +159,74 @@ fn process_state(
     mut outgoing_used: usize,
 ) -> Result<(), Error> {
     let mut open_connection = true;
-    info!("Size of outgoing TLS before loop {}", outgoing_tls.len());
     loop {
         while open_connection {
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
 
-            dbg!(Debug2Format(&state));
+            socket.set_keep_alive(Some(Duration::from_millis(500)));
             match state {
                 LlState::MustEncodeTlsData(mut state) => {
-                    info!("Inside MustEncodeTlsData");
-
+                    dbg!("State MustEncode");
                     let written = match state.encode(&mut outgoing_tls[outgoing_used..]) {
-                        Ok(written) => Ok(written),
-
+                        Ok(written) => {
+                            info!("Written bytes {}", written);
+                            Ok(written)
+                        }
                         Err(e) => match e {
                             EncodeError::InsufficientSize(InsufficientSizeError {
                                 required_size,
                             }) => {
-                                info!("Required size {}", required_size);
                                 let new_len = outgoing_used + required_size;
                                 outgoing_tls.resize(new_len, 0);
                                 match state.encode(&mut outgoing_tls[outgoing_used..]) {
-                                    Ok(w) => Ok(w),
+                                    Ok(w) => {
+                                        info!("Written bytes {}", w);
+                                        Ok(w)
+                                    }
                                     Err(e) => Err(e),
                                 }
                             }
                             EncodeError::AlreadyEncoded => Err(e),
                         },
                     };
-                    // Should be always Ok(written)
-                    info!("Outgoing TLS");
-                    info!("{}", Debug2Format(&outgoing_tls));
                     outgoing_used += written.unwrap();
-                    info!("Inside MustEncodeTlsData: Outgoing used {}", outgoing_used);
+                    info!("outgoing_used {}", outgoing_used);
                 }
                 LlState::MustTransmitTlsData(state) => {
-                    info!("Inside MustTransmitTlsData");
-                    info!("MustTransmitTlsData: Outgoing used {}", outgoing_used);
-                    info!("Outgoing TLS");
-                    info!("{}", Debug2Format(&outgoing_tls));
-                    embassy_futures::block_on(async {
+                    info!("Entering MustTransmitTlsData");
+                    let _ = embassy_futures::block_on(async {
                         let r = socket.write_all(&outgoing_tls[..outgoing_used]).await;
-
-                        info!("result of write_all {}", r);
-                        let r = socket.flush().await;
-                        info!("result of flushing {}", r);
+                        info!("Entering MustTransmitTlsData");
+                        match r {
+                            Ok(r) => {
+                                info!("State MustTransmit. Result of write_all {}", r);
+                                Ok(())
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "State MustTransmit. Error of write_all: {}",
+                                    Debug2Format(&r)
+                                );
+                                return Err(e);
+                            }
+                        }
                     });
 
                     outgoing_used = 0;
-                    info!("STATE.done()");
+                    info!("State MustTransmit. state.done()");
                     state.done();
                 }
                 LlState::NeedsMoreTlsData { num_bytes } => {
-                    info!("Inside NeedsMoreTlsData");
-                    info!("Numnumbytes {}", num_bytes);
+                    info!("State NeedsMoreTlsData.");
 
                     let read = embassy_futures::block_on(async {
                         socket.read(&mut incoming_tls[incoming_used..]).await
                     });
-
-                    info!("read {}", read.unwrap());
-                    //incoming_used += read.unwrap();
-                    info!("After blocking loop.");
-                    info!("Numbytes {}", num_bytes);
-                    info!("Incoming used {}", incoming_used);
+                    info!("State NeedsMoreTls. Result of socket.read() {}", read);
+                    incoming_used += read.unwrap();
+                    info!("State NeedsMoreTls. incoming_used {}", incoming_used);
                 }
                 _ => {
                     dbg!(Debug2Format(&state));

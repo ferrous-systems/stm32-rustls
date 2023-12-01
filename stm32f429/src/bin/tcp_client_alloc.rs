@@ -127,7 +127,7 @@ async fn main(spawner: Spawner) -> ! {
         Ok(_) => info!("connection worked",),
         Err(e) => info!("connection error {}", &e),
     }
-    socket.set_keep_alive(Some(Duration::from_millis(500)));
+    socket.set_keep_alive(Some(Duration::from_millis(100)));
 
     let _ = process_state(
         &mut socket,
@@ -136,9 +136,10 @@ async fn main(spawner: Spawner) -> ! {
         incoming_used,
         outgoing_tls,
         outgoing_used,
-    );
-    socket.set_keep_alive(Some(Duration::from_millis(500)));
+    )
+    .await;
 
+    // This is incorrect need to read on how to add a timer
     loop {
         embassy_futures::block_on(async {
             unwrap!(spawner.spawn(wait(10)));
@@ -150,7 +151,8 @@ async fn main(spawner: Spawner) -> ! {
 async fn wait(time: u64) {
     Timer::after(Duration::from_secs(time)).await;
 }
-fn process_state(
+
+async fn process_state(
     socket: &mut TcpSocket<'_>,
     mut conn: LlClientConnection,
     mut incoming_tls: [u8; 16384],
@@ -159,13 +161,15 @@ fn process_state(
     mut outgoing_used: usize,
 ) -> Result<(), Error> {
     let mut open_connection = true;
+    let request = http_request("localhost");
+
     loop {
         while open_connection {
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
 
-            socket.set_keep_alive(Some(Duration::from_millis(500)));
+            socket.set_keep_alive(Some(Duration::from_millis(100)));
             match state {
                 LlState::MustEncodeTlsData(mut state) => {
                     dbg!("State MustEncode");
@@ -196,23 +200,13 @@ fn process_state(
                 }
                 LlState::MustTransmitTlsData(state) => {
                     info!("Entering MustTransmitTlsData");
-                    let _ = embassy_futures::block_on(async {
-                        let r = socket.write_all(&outgoing_tls[..outgoing_used]).await;
-                        info!("Entering MustTransmitTlsData");
-                        match r {
-                            Ok(r) => {
-                                info!("State MustTransmit. Result of write_all {}", r);
-                                Ok(())
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "State MustTransmit. Error of write_all: {}",
-                                    Debug2Format(&r)
-                                );
-                                return Err(e);
-                            }
-                        }
-                    });
+
+                    let _ = socket
+                        .write_all(&outgoing_tls[..outgoing_used])
+                        .await
+                        .unwrap();
+                    info!("Going to flush after write all");
+                    socket.flush().await.unwrap();
 
                     outgoing_used = 0;
                     info!("State MustTransmit. state.done()");
@@ -221,17 +215,13 @@ fn process_state(
                 LlState::NeedsMoreTlsData { num_bytes } => {
                     info!("State NeedsMoreTlsData.");
 
-                    let read = embassy_futures::block_on(async {
-                        socket.read(&mut incoming_tls[incoming_used..]).await
-                    });
+                    let read = socket.read(&mut incoming_tls[incoming_used..]).await;
+                    info!("After read");
                     info!("State NeedsMoreTls. Result of socket.read() {}", read);
                     incoming_used += read.unwrap();
                     info!("State NeedsMoreTls. incoming_used {}", incoming_used);
                 }
-                _ => {
-                    dbg!(Debug2Format(&state));
-                    return Ok(());
-                }
+                _ => panic!(),
             }
             // discard TLS records
             // discard will kick in after sending

@@ -5,9 +5,6 @@ name = "dependency-solver"
 edition = "2021"
 version = "0.1.0"
 
-[lib]
-harness = false
-
 # needed for each integration test
 [[test]]
 name = "integration"

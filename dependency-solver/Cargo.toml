@@ -5,11 +5,6 @@ name = "dependency-solver"
 edition = "2021"
 version = "0.1.0"
 
-# needed for each integration test
-[[test]]
-name = "integration"
-harness = false
-
 [dependencies]
 
 cortex-m = { version = "0.7.6", features = [
@@ -46,10 +41,6 @@ embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "fe8c46b", 
     "dhcpv4",
     "medium-ethernet",
 ] }
-
-[dev-dependencies]
-defmt-test = "0.3"
-
 
 # cargo build/run
 [profile.dev]

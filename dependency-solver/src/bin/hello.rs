@@ -14,6 +14,6 @@ use {defmt_rtt as _, panic_probe as _};
 async fn main(_spawner: Spawner) -> ! {
     let config = Config::default();
     let _p = embassy_stm32::init(config);
-
+    info!("going to panic");
     panic!();
 }

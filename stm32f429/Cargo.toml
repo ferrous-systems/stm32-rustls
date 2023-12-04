@@ -35,7 +35,7 @@ embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a
     "tick-hz-32_768",
 ] }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a46682f76dcc4d75f9ba4ce80dfb4193", features = [
-    "defmt",
+    #"defmt",
 ] }
 embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "eb368f77a46682f76dcc4d75f9ba4ce80dfb4193", features = [
     "defmt",
@@ -91,7 +91,5 @@ rustls-pemfile = { git = "https://github.com/rustls/pemfile", default-features =
 
 [profile.release]
 debug = 2
-opt-level = "z"
+opt-level = 3
 #lto = true
-[package.metadata.defmt]
-log = "{timestamp} {level} {args}"

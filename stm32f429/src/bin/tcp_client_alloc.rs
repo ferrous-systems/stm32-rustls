@@ -52,7 +52,7 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
 }
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) -> ! {
+async fn main(spawner: Spawner) {
     let mut config = Config::default();
     config.rcc.sys_ck = Some(mhz(100));
     let p = embassy_stm32::init(config);
@@ -67,9 +67,6 @@ async fn main(spawner: Spawner) -> ! {
     // why does this work, is it doing a background task out of its
     //stack.run().await;
     stack.wait_config_up().await;
-
-    let mut rx_buffer = [0; 1024];
-    let mut tx_buffer = [0; 1024];
 
     init_heap();
 
@@ -102,9 +99,6 @@ async fn main(spawner: Spawner) -> ! {
 
     client_config.time_provider = demotimeprovider::time_provider();
 
-    let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-    socket.set_timeout(Some(Duration::from_secs(10)));
-
     //TLS starts here
     let mut conn = LlClientConnection::new(
         Arc::new(client_config),
@@ -112,59 +106,37 @@ async fn main(spawner: Spawner) -> ! {
     )
     .unwrap();
 
+    spawner.spawn(process_state(stack, conn));
+}
+
+#[embassy_executor::task]
+async fn process_state(stack: &'static Stack<Device>, mut conn: LlClientConnection) {
     let mut incoming_tls: [u8; 16384] = [0; 16 * 1024];
     let mut incoming_used = 0;
 
     let mut outgoing_tls: Vec<u8> = vec![];
     let mut outgoing_used = 0;
-
-    //let remote_endpoint = (Ipv4Address::new(52, 85, 242, 46), PORT);
-    let remote_endpoint = (Ipv4Address::new(192, 168, 50, 67), PORT);
-    //let remote_endpoint = (Ipv4Address::new(127, 0, 0, 1), PORT);
-    let connection_result = socket.connect(remote_endpoint).await;
-
-    match connection_result {
-        Ok(_) => info!("connection worked",),
-        Err(e) => info!("connection error {}", &e),
-    }
-    socket.set_keep_alive(Some(Duration::from_millis(100)));
-
-    let _ = process_state(
-        &mut socket,
-        conn,
-        incoming_tls,
-        incoming_used,
-        outgoing_tls,
-        outgoing_used,
-    )
-    .await;
-
-    // This is incorrect need to read on how to add a timer
+    let mut rx_buffer = [0; 1024];
+    let mut tx_buffer = [0; 1024];
     loop {
-        embassy_futures::block_on(async {
-            unwrap!(spawner.spawn(wait(10)));
-        });
-    }
-}
+        let mut open_connection = true;
+        let request = http_request("localhost");
 
-#[embassy_executor::task]
-async fn wait(time: u64) {
-    Timer::after(Duration::from_secs(time)).await;
-}
+        let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        socket.set_timeout(Some(Duration::from_secs(10)));
 
-async fn process_state(
-    socket: &mut TcpSocket<'_>,
-    mut conn: LlClientConnection,
-    mut incoming_tls: [u8; 16384],
-    mut incoming_used: usize,
-    mut outgoing_tls: Vec<u8>,
-    mut outgoing_used: usize,
-) -> Result<(), Error> {
-    let mut open_connection = true;
-    let request = http_request("localhost");
+        socket.set_keep_alive(Some(Duration::from_millis(100)));
+        //let remote_endpoint = (Ipv4Address::new(52, 85, 242, 46), PORT);
+        let remote_endpoint = (Ipv4Address::new(192, 168, 50, 67), PORT);
+        //let remote_endpoint = (Ipv4Address::new(127, 0, 0, 1), PORT);
+        let connection_result = socket.connect(remote_endpoint).await;
 
-    loop {
-        while open_connection {
+        match connection_result {
+            Ok(_) => info!("connection worked",),
+            Err(e) => info!("connection error {}", &e),
+        }
+
+        while true {
             let LlStatus { discard, state } = conn
                 .process_tls_records(&mut incoming_tls[..incoming_used])
                 .unwrap();
@@ -214,14 +186,13 @@ async fn process_state(
                 }
                 LlState::NeedsMoreTlsData { num_bytes } => {
                     info!("State NeedsMoreTlsData.");
-
                     let read = socket.read(&mut incoming_tls[incoming_used..]).await;
                     info!("After read");
                     info!("State NeedsMoreTls. Result of socket.read() {}", read);
                     incoming_used += read.unwrap();
                     info!("State NeedsMoreTls. incoming_used {}", incoming_used);
                 }
-                _ => panic!(),
+                _ => info!("not managed state should panic"),
             }
             // discard TLS records
             // discard will kick in after sending
@@ -232,7 +203,6 @@ async fn process_state(
                 incoming_used -= discard;
             }
         }
-        return Ok(());
     }
 }
 

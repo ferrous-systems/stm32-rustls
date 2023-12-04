@@ -2,6 +2,7 @@
 #runner = "probe-run --chip STM32F429ZITx --no-flash"
 runner = "probe-run --chip STM32F429ZITx"
 #runner = "probe-rs-cli run --chip STM32F429ZITx"
+#rustflags = ["-C", "codegen-units=1", "-C", "link-arg=-Tdefmt.x"]
 rustflags = ["-C", "codegen-units=1"]
 [build]
 target = "thumbv7em-none-eabi"
